@@ -52,6 +52,11 @@ footer {visibility: hidden;}
     cursor: pointer;
 }
 
+/* ẨN LIST MẶC ĐỊNH */
+[data-testid="stFileUploader"] ul {
+    display: none;
+}
+
 [data-testid="stFileUploader"] small { display: none; }
 [data-testid="stFileUploader"] label { display: none; }
 
@@ -62,36 +67,23 @@ footer {visibility: hidden;}
     color: #334155;
 }
 
-/* FILE CARD */
-.file-card {
-    position: relative;
-    background:white;
-    padding:14px;
-    border-radius:12px;
-    margin-bottom:10px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.05);
-}
-
-/* DELETE BUTTON (góc phải) */
-.delete-btn {
-    position:absolute;
-    top:6px;
-    right:10px;
+/* FILE LIST (GIỐNG uploader) */
+.file-inline {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:#f1f5f9;
+    padding:8px 12px;
+    border-radius:8px;
+    margin-top:6px;
     font-size:14px;
 }
 
-/* PROGRESS */
-.progress {
-    height:6px;
-    background:#e5e7eb;
-    border-radius:10px;
-    overflow:hidden;
-    margin-top:6px;
-}
-
-.progress-bar {
-    height:100%;
-    background:#0ea5e9;
+/* DELETE */
+.del-btn {
+    color:red;
+    font-weight:bold;
+    cursor:pointer;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -106,7 +98,7 @@ st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=T
 # =========================
 uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
 
-# 👉 lưu file vào session
+# lưu file
 if uploaded_files:
     for f in uploaded_files:
         if f.name not in [x["name"] for x in st.session_state.files_store]:
@@ -116,21 +108,20 @@ if uploaded_files:
             })
 
 # =========================
-# FILE LIST (❌ góc phải chuẩn)
+# FILE LIST NGAY DƯỚI UPLOADER
 # =========================
 for i, f in enumerate(st.session_state.files_store):
 
-    container = st.container()
+    col1, col2 = st.columns([20,1])
 
-    with container:
-        # Card
+    with col1:
         st.markdown(f"""
-        <div class="file-card">
+        <div class="file-inline">
             📄 {f["name"]}
         </div>
         """, unsafe_allow_html=True)
 
-        # ❌ nằm đè lên góc phải
+    with col2:
         if st.button("❌", key=f"del_{i}"):
             st.session_state.files_store.pop(i)
             st.rerun()
@@ -156,16 +147,7 @@ def extract_pdf(file, box, idx, total, global_bar):
         percent = int((i/total_pages)*100)
         global_percent = int(((idx + i/total_pages)/total)*100)
 
-        html = f"""
-<div class="file-card">
-📄 {file.name}<br>
-{i}/{total_pages} • {percent}%
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
-</div>
-"""
-        box.markdown(html, unsafe_allow_html=True)
+        box.progress(percent)
         global_bar.progress(global_percent)
 
         w, h = img.size
@@ -197,13 +179,7 @@ if st.session_state.files_store:
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
             for i, f in enumerate(st.session_state.files_store):
 
-                data = extract_pdf(
-                    f["file"],
-                    boxes[i],
-                    i,
-                    len(st.session_state.files_store),
-                    global_bar
-                )
+                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
@@ -230,11 +206,9 @@ if st.session_state.files_store:
         st.rerun()
 
 # =========================
-# DOWNLOAD + AUTO RELOAD
+# DOWNLOAD
 # =========================
 if st.session_state.done:
-
-    st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
@@ -245,8 +219,4 @@ if st.session_state.done:
         file_name="ocr_results.zip",
         mime="application/zip"
     ):
-        st.toast("✅ Download xong!", icon="🎉")
-
-        st.markdown("""
-        <meta http-equiv="refresh" content="2">
-        """, unsafe_allow_html=True)
+        st.markdown('<meta http-equiv="refresh" content="2">', unsafe_allow_html=True)
