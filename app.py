@@ -9,113 +9,69 @@ import os
 from openpyxl import load_workbook
 
 # =========================
-# PAGE CONFIG
+# CONFIG
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
-# =========================
-# MODERN UI (Dashboard style)
-# =========================
 st.markdown("""
 <style>
-
-/* nền app */
 .stApp {
     background: linear-gradient(135deg, #0ea5e9, #22c55e);
 }
 
-/* title */
 h1 {
     text-align: center;
     color: white !important;
-    font-size: 40px !important;
     font-weight: 900;
-    margin-bottom: 10px;
 }
 
-/* container */
-.block-container {
-    padding: 1.5rem;
-}
-
-/* uploader */
-div[data-testid="stFileUploader"] {
-    background: white;
-    padding: 15px;
-    border-radius: 14px;
-    border: 2px dashed #22c55e;
-}
-
-/* button */
-.stButton > button {
-    width: 100%;
-    background: linear-gradient(90deg, #0284c7, #22c55e);
-    color: white;
-    border-radius: 12px;
-    padding: 12px;
-    font-weight: 700;
-    border: none;
-}
-
-/* status box */
-.status-box {
+.block {
     background: rgba(255,255,255,0.92);
-    padding: 12px 16px;
+    padding: 12px;
     border-radius: 12px;
-    margin-top: 10px;
     font-weight: 600;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-}
-
-/* progress */
-.stProgress > div > div {
-    background: linear-gradient(90deg, #0284c7, #22c55e);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 OCR MULTI PDF → EXCEL DASHBOARD")
+st.title("📄 OCR MULTI PDF DASHBOARD (GRID MODE)")
 
 
 # =========================
-# OCR FUNCTION
+# OCR
 # =========================
 def process_page(img):
-    text = pytesseract.image_to_string(
-        img,
-        lang='eng',
-        config='--oem 3 --psm 6'
-    )
+    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
 
     sm = re.search(r"(SM\d{4}\.\d{4})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
 
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    return None, None
+    return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 
 # =========================
-# EXTRACT PDF (ONE LINE STATUS)
+# PROCESS FILE
 # =========================
-def extract_pdf(file, file_index, total_files, status_holder):
+def extract_pdf(file, status_box, file_idx, total_files):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
-    page_progress = st.progress(0)
-
     for i, img in enumerate(images, start=1):
 
-        # ✅ GOM 1 DÒNG STATUS
-        status_holder.markdown(
+        # update đúng 1 ô (không xuống dòng)
+        status_box.markdown(
             f"""
-            <div class="status-box">
-            📁 File {file_index}/{total_files} | {file.name}  
-            📄 Trang {i}/{total_pages} | ⚡ Đang xử lý...
+            <div class="block">
+            📁 {file.name}<br>
+            📄 {i}/{total_pages} | ⚡ Processing
             </div>
             """,
             unsafe_allow_html=True
@@ -129,29 +85,17 @@ def extract_pdf(file, file_index, total_files, status_holder):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-        page_progress.progress(i / total_pages)
+    status_box.markdown(
+        f"""
+        <div class="block">
+        📁 {file.name}<br>
+        ✅ DONE
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     return results
-
-
-# =========================
-# AUTO WIDTH EXCEL
-# =========================
-def auto_width(path):
-    wb = load_workbook(path)
-    ws = wb.active
-
-    for col in ws.columns:
-        max_len = 0
-        col_letter = col[0].column_letter
-
-        for cell in col:
-            if cell.value:
-                max_len = max(max_len, len(str(cell.value)))
-
-        ws.column_dimensions[col_letter].width = max_len + 3
-
-    wb.save(path)
 
 
 # =========================
@@ -165,49 +109,65 @@ uploaded_files = st.file_uploader(
 
 
 # =========================
-# PROCESS ALL
+# RUN
 # =========================
 if uploaded_files:
 
-    st.success(f"📦 Đã chọn {len(uploaded_files)} file")
+    st.success(f"Đã chọn {len(uploaded_files)} file")
 
-    if st.button("🚀 START PROCESS"):
-        main_progress = st.progress(0)
-        main_status = st.empty()
+    # 🔥 CHIA CỘT THEO SỐ FILE
+    cols = st.columns(len(uploaded_files))
+
+    status_boxes = []
+
+    for i in range(len(uploaded_files)):
+        with cols[i]:
+            box = st.empty()
+            status_boxes.append(box)
+
+    if st.button("🚀 START OCR"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-        total_files = len(uploaded_files)
-
-        status_holder = st.empty()
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
-            for idx, file in enumerate(uploaded_files, start=1):
+            for idx, file in enumerate(uploaded_files):
 
-                main_status.info(f"⚡ Processing {file.name} ({idx}/{total_files})")
-
-                data = extract_pdf(file, idx, total_files, status_holder)
+                data = extract_pdf(
+                    file,
+                    status_boxes[idx],
+                    idx,
+                    len(uploaded_files)
+                )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df) + 1))
 
-                    base_name = os.path.splitext(file.name)[0]
-                    excel_name = f"{base_name}.xlsx"
+                    base = os.path.splitext(file.name)[0]
+                    excel_name = f"{base}.xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
-                        auto_width(tmp.name)
+                        wb = load_workbook(tmp.name)
+                        ws = wb.active
 
+                        for col in ws.columns:
+                            max_len = 0
+                            col_letter = col[0].column_letter
+                            for c in col:
+                                if c.value:
+                                    max_len = max(max_len, len(str(c.value)))
+                            ws.column_dimensions[col_letter].width = max_len + 3
+
+                        wb.save(tmp.name)
                         zipf.write(tmp.name, excel_name)
 
-                main_progress.progress(idx / total_files)
-
-        main_status.success("🎉 HOÀN TẤT TẤT CẢ FILE!")
+        st.success("🎉 HOÀN TẤT!")
 
         with open(zip_buffer.name, "rb") as f:
             st.download_button(
-                "📥 DOWNLOAD ALL (ZIP)",
+                "📥 DOWNLOAD ZIP",
                 f,
                 file_name="ocr_results.zip"
             )
