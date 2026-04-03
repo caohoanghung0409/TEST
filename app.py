@@ -11,74 +11,81 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR SaaS PRO", layout="wide")
+st.set_page_config(page_title="OCR Drive UI", layout="wide")
 
 # =========================
-# SESSION STATE
+# SESSION
 # =========================
 if "done" not in st.session_state:
     st.session_state.done = False
 
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
+if "clear" not in st.session_state:
+    st.session_state.clear = False
 
 # =========================
-# SIDEBAR
+# STYLE (GOOGLE DRIVE)
 # =========================
-with st.sidebar:
-    st.title("⚙️ OCR Tool")
-    theme = st.radio("🎨 Theme", ["Light", "Dark"])
-
-# =========================
-# THEME
-# =========================
-if theme == "Dark":
-    bg = "#0f172a"
-    card = "rgba(255,255,255,0.08)"
-    text = "white"
-else:
-    bg = "#f1f5f9"
-    card = "white"
-    text = "#0f172a"
-
-st.markdown(f"""
+st.markdown("""
 <style>
-header {{visibility: hidden;}}
-#MainMenu {{visibility: hidden;}}
-footer {{visibility: hidden;}}
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 
-.stApp {{
-    background: {bg};
-    color: {text};
-}}
+.stApp {
+    background: #f8fafc;
+}
 
-.card {{
-    background: {card};
-    padding: 15px;
-    border-radius: 14px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-}}
+/* HEADER */
+.header {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:15px;
+    font-size:20px;
+    font-weight:600;
+}
 
-.progress-bar {{
-    width: 100%;
-    height: 8px;
-    background: #e5e7eb;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-top: 10px;
-}}
+/* UPLOAD BOX */
+.upload-box {
+    border: 2px dashed #cbd5f5;
+    padding: 40px;
+    border-radius: 16px;
+    text-align:center;
+    background:white;
+    margin-bottom:20px;
+}
 
-.progress-fill {{
-    height: 100%;
-    background: linear-gradient(90deg, #0ea5e9, #22c55e);
-}}
+/* FILE LIST */
+.file-row {
+    background:white;
+    padding:15px;
+    border-radius:12px;
+    margin-bottom:10px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
+}
 
-.stButton>button {{
-    background: linear-gradient(90deg, #0ea5e9, #22c55e);
-    color: white;
-    font-weight: 700;
-    border-radius: 10px;
-}}
+/* PROGRESS */
+.progress {
+    height:6px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:8px;
+}
+
+.progress-bar {
+    height:100%;
+    background:#0ea5e9;
+}
+
+/* BUTTON */
+.stButton>button {
+    background:#0ea5e9;
+    color:white;
+    border-radius:8px;
+    font-weight:600;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,7 +93,7 @@ footer {{visibility: hidden;}}
 # HEADER
 # =========================
 st.markdown("""
-<h2 style='text-align:center;'>📄 OCR PDF Dashboard</h2>
+<div class="header">📁 OCR Drive Tool</div>
 """, unsafe_allow_html=True)
 
 # =========================
@@ -101,31 +108,28 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# PROCESS FILE
+# PROCESS
 # =========================
-def extract_pdf(file, status_box, global_progress, idx, total_files):
+def extract_pdf(file, box, idx, total, global_bar):
     results = []
-
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-
-        percent = int((i / total_pages) * 100)
-        global_percent = int(((idx + (i/total_pages)) / total_files) * 100)
+        percent = int((i/total_pages)*100)
+        global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="card">
-📁 {file.name}<br>
-📄 {i}/{total_pages} • {percent}%
-<div class="progress-bar">
-<div class="progress-fill" style="width:{percent}%"></div>
+<div class="file-row">
+📄 {file.name}<br>
+{i}/{total_pages} • {percent}%
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
 </div>
 </div>
 """
-
-        status_box.markdown(html, unsafe_allow_html=True)
-        global_progress.progress(global_percent)
+        box.markdown(html, unsafe_allow_html=True)
+        global_bar.progress(global_percent)
 
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
@@ -135,19 +139,21 @@ def extract_pdf(file, status_box, global_progress, idx, total_files):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    status_box.markdown(f"""
-<div class="card">📁 {file.name}<br>✅ DONE</div>
+    box.markdown(f"""
+<div class="file-row">📄 {file.name} ✅ DONE</div>
 """, unsafe_allow_html=True)
 
     return results
 
 # =========================
-# UPLOADER (RESET KEY)
+# UPLOAD BOX
 # =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+st.markdown('<div class="upload-box">📤 Drag & Drop PDF hoặc chọn file bên dưới</div>', unsafe_allow_html=True)
 
-uploaded_files = st.file_uploader(
-    "📤 Upload PDF",
+uploader_key = "u1" if not st.session_state.clear else "u2"
+
+files = st.file_uploader(
+    "",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
@@ -156,35 +162,29 @@ uploaded_files = st.file_uploader(
 # =========================
 # MAIN
 # =========================
-if uploaded_files:
+if files:
 
-    global_progress = st.progress(0)
+    st.write(f"📦 {len(files)} file đã chọn")
 
-    cols = st.columns(len(uploaded_files))
-    status_boxes = [cols[i].empty() for i in range(len(uploaded_files))]
+    global_bar = st.progress(0)
 
-    if st.button("🚀 Start OCR"):
+    boxes = [st.empty() for _ in files]
+
+    if st.button("🚀 Process Files"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
-            for idx, file in enumerate(uploaded_files):
+            for i, f in enumerate(files):
 
-                data = extract_pdf(
-                    file,
-                    status_boxes[idx],
-                    global_progress,
-                    idx,
-                    len(uploaded_files)
-                )
+                data = extract_pdf(f, boxes[i], i, len(files), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df) + 1))
+                    df.insert(0, "STT", range(1, len(df)+1))
 
-                    base = os.path.splitext(file.name)[0]
-                    excel_name = f"{base}.xlsx"
+                    name = os.path.splitext(f.name)[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
@@ -193,34 +193,29 @@ if uploaded_files:
                         ws = wb.active
 
                         for col in ws.columns:
-                            max_len = 0
-                            col_letter = col[0].column_letter
-                            for c in col:
-                                if c.value:
-                                    max_len = max(max_len, len(str(c.value)))
-                            ws.column_dimensions[col_letter].width = max_len + 3
+                            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                            ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
                         wb.save(tmp.name)
-                        zipf.write(tmp.name, excel_name)
+                        zipf.write(tmp.name, name)
 
         st.session_state.done = True
-        st.session_state.zip_path = zip_buffer.name
+        st.session_state.zip = zip_buffer.name
 
 # =========================
-# DOWNLOAD + SMOOTH RESET
+# DOWNLOAD + RESET
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xử lý xong!")
+    st.success("🎉 Xong!")
 
-    with open(st.session_state.zip_path, "rb") as f:
-        if st.download_button("📥 Download ZIP", f, file_name="ocr_results.zip"):
+    with open(st.session_state.zip, "rb") as f:
+        if st.download_button("📥 Download ZIP", f):
 
-            # 🔥 RESET MƯỢT (KHÔNG RELOAD)
+            st.toast("✅ Download xong!", icon="🎉")
+
+            # reset mượt
             st.session_state.done = False
-            st.session_state.clear_uploader = not st.session_state.clear_uploader
-
-            # Toast kiểu SaaS
-            st.toast("✅ Download thành công!", icon="🎉")
+            st.session_state.clear = not st.session_state.clear
 
             st.rerun()
