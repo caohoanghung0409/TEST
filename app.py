@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (FULL UI)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -47,48 +47,16 @@ footer {visibility: hidden;}
     font-weight:600;
 }
 
-/* =========================
-   UPLOADER CUSTOM
-========================= */
+/* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 40px;
+    padding: 30px;
     border-radius: 16px;
     text-align: center;
     background: white;
-    cursor: pointer;
 }
 
-/* ẨN TEXT GỐC */
-[data-testid="stFileUploader"] label,
-[data-testid="stFileUploader"] small {
-    display: none;
-}
-
-/* BADGE PDF */
-[data-testid="stFileUploader"]::before {
-    content: "PDF";
-    display: inline-block;
-    background: linear-gradient(135deg,#ef4444,#dc2626);
-    color: white;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 5px 10px;
-    border-radius: 6px;
-    margin-bottom: 10px;
-}
-
-/* TEXT UPLOAD */
-[data-testid="stFileUploader"]::after {
-    content: "⬆️ Drag & Drop PDF hoặc click để chọn";
-    display: block;
-    font-size: 15px;
-    color: #334155;
-}
-
-/* =========================
-   FILE ROW
-========================= */
+/* FILE ROW */
 .file-row {
     margin-top:12px;
 }
@@ -107,6 +75,7 @@ footer {visibility: hidden;}
     padding:3px 6px;
     border-radius:6px;
     margin-right:6px;
+    letter-spacing:0.5px;
 }
 
 /* STATUS */
@@ -115,9 +84,7 @@ footer {visibility: hidden;}
     color:#64748b;
 }
 
-/* =========================
-   PROGRESS
-========================= */
+/* PROGRESS */
 .progress {
     height:6px;
     background:#e5e7eb;
