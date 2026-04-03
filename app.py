@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (CLEAN UI)
+# STYLE (ANIMATION DRIVE STYLE)
 # =========================
 st.markdown("""
 <style>
@@ -58,8 +58,7 @@ footer {visibility: hidden;}
 
 /* FILE ROW */
 .file-row {
-    font-size:14px;
-    margin-top:10px;
+    margin-top:12px;
 }
 
 .file-name {
@@ -67,22 +66,48 @@ footer {visibility: hidden;}
 }
 
 .file-status {
-    color:#64748b;
     font-size:13px;
+    color:#64748b;
 }
 
-/* PROGRESS */
+/* PROGRESS BAR BASE */
 .progress {
     height:6px;
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:4px;
+    margin-top:6px;
+    position: relative;
 }
 
+/* NORMAL PROGRESS */
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
+    transition: width 0.3s ease;
+}
+
+/* SHIMMER EFFECT */
+.progress-anim::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -40%;
+    height: 100%;
+    width: 40%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255,255,255,0.6),
+        transparent
+    );
+    animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+    100% {
+        left: 120%;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -90,7 +115,7 @@ footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -128,8 +153,8 @@ def extract_pdf(file, box, idx, total, global_bar):
         html = f"""
 <div class="file-row">
     <div class="file-name">📄 {file.name}</div>
-    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
-    <div class="progress">
+    <div class="file-status">Đang xử lý • Trang {i}/{total_pages} • {percent}%</div>
+    <div class="progress progress-anim">
         <div class="progress-bar" style="width:{percent}%"></div>
     </div>
 </div>
@@ -145,6 +170,17 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
+    # DONE STATE (tắt animation)
+    box.markdown(f"""
+<div class="file-row">
+    <div class="file-name">📄 {file.name}</div>
+    <div class="file-status">✅ Hoàn tất</div>
+    <div class="progress">
+        <div class="progress-bar" style="width:100%"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
     return results
 
 # =========================
@@ -153,7 +189,6 @@ def extract_pdf(file, box, idx, total, global_bar):
 if uploaded_files:
 
     global_bar = st.progress(0)
-
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
