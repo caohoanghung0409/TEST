@@ -11,63 +11,103 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR Timeline UI", layout="wide")
+st.set_page_config(page_title="OCR Drive UI", layout="wide")
 
 # =========================
 # SESSION
 # =========================
-for key in ["processing", "done", "clear_uploader"]:
-    if key not in st.session_state:
-        st.session_state[key] = False
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
+if "done" not in st.session_state:
+    st.session_state.done = False
+
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (TIMELINE UI)
+# STYLE (ANIMATION DRIVE STYLE)
 # =========================
 st.markdown("""
 <style>
-header, #MainMenu, footer {visibility: hidden;}
-.stApp { background: #0f172a; color: #e2e8f0; }
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+.stApp { background: #f8fafc; }
 
 .block-container {
-    padding-top: 1rem !important;
+    padding-top: 0.5rem !important;
 }
 
-/* PANEL */
-.panel {
-    background: #111827;
-    padding: 20px;
+/* HEADER */
+.header {
+    padding:10px 0;
+    font-size:20px;
+    font-weight:600;
+}
+
+/* UPLOADER */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #cbd5f5;
+    padding: 30px;
     border-radius: 16px;
+    text-align: center;
+    background: white;
 }
 
-/* FILE BLOCK */
-.file-block {
-    border-left: 2px solid #334155;
-    padding-left: 15px;
-    margin-bottom: 20px;
+/* FILE ROW */
+.file-row {
+    margin-top:12px;
 }
 
-/* DOT */
-.dot {
-    height: 10px;
-    width: 10px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 8px;
-}
-
-.running { background: #3b82f6; }
-.done { background: #22c55e; }
-
-/* TEXT */
 .file-name {
-    font-weight: 600;
+    font-weight:500;
 }
 
-.log {
-    font-size: 13px;
-    color: #94a3b8;
-    margin-left: 18px;
-    margin-top: 3px;
+.file-status {
+    font-size:13px;
+    color:#64748b;
+}
+
+/* PROGRESS BAR BASE */
+.progress {
+    height:6px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:6px;
+    position: relative;
+}
+
+/* NORMAL PROGRESS */
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#0ea5e9,#22c55e);
+    transition: width 0.3s ease;
+}
+
+/* SHIMMER EFFECT */
+.progress-anim::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -40%;
+    height: 100%;
+    width: 40%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255,255,255,0.6),
+        transparent
+    );
+    animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+    100% {
+        left: 120%;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -75,7 +115,7 @@ header, #MainMenu, footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown("## ⚡ OCR Processing Timeline")
+st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -83,7 +123,7 @@ st.markdown("## ⚡ OCR Processing Timeline")
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
-    "Upload PDF",
+    "",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
@@ -99,14 +139,60 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
+# PROCESS
+# =========================
+def extract_pdf(file, box, idx, total, global_bar):
+    results = []
+    images = convert_from_bytes(file.read(), dpi=150)
+    total_pages = len(images)
+
+    for i, img in enumerate(images, start=1):
+        percent = int((i/total_pages)*100)
+        global_percent = int(((idx + i/total_pages)/total)*100)
+
+        html = f"""
+<div class="file-row">
+    <div class="file-name">📄 {file.name}</div>
+    <div class="file-status">Đang xử lý • Trang {i}/{total_pages} • {percent}%</div>
+    <div class="progress progress-anim">
+        <div class="progress-bar" style="width:{percent}%"></div>
+    </div>
+</div>
+"""
+        box.markdown(html, unsafe_allow_html=True)
+        global_bar.progress(global_percent)
+
+        # crop top
+        w, h = img.size
+        img = img.crop((0, 0, w, int(h * 0.4)))
+
+        sm, date = process_page(img)
+        if sm and date:
+            results.append({"SM": sm, "Ngày": date})
+
+    # DONE STATE (tắt animation)
+    box.markdown(f"""
+<div class="file-row">
+    <div class="file-name">📄 {file.name}</div>
+    <div class="file-status">✅ Hoàn tất</div>
+    <div class="progress">
+        <div class="progress-bar" style="width:100%"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    return results
+
+# =========================
 # MAIN
 # =========================
 if uploaded_files:
 
+    global_bar = st.progress(0)
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Start Processing"):
+        if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
@@ -115,49 +201,12 @@ if uploaded_files:
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for idx, f in enumerate(uploaded_files):
+            for i, f in enumerate(uploaded_files):
 
-                images = convert_from_bytes(f.read(), dpi=150)
-                total_pages = len(images)
-                results = []
+                data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
 
-                for i, img in enumerate(images, start=1):
-
-                    boxes[idx].markdown(f"""
-<div class="panel">
-    <div class="file-block">
-        <div class="file-name">
-            <span class="dot running"></span>{f.name}
-        </div>
-        <div class="log">Processing page {i}/{total_pages}</div>
-        <div class="log">Running OCR...</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-                    w, h = img.size
-                    img = img.crop((0, 0, w, int(h * 0.4)))
-
-                    sm, date = process_page(img)
-                    if sm and date:
-                        results.append({"SM": sm, "Ngày": date})
-
-                # DONE UI
-                boxes[idx].markdown(f"""
-<div class="panel">
-    <div class="file-block">
-        <div class="file-name">
-            <span class="dot done"></span>{f.name}
-        </div>
-        <div class="log">Completed {total_pages} pages</div>
-        <div class="log">Data extracted successfully</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-                # EXPORT
-                if results:
-                    df = pd.DataFrame(results)
+                if data:
+                    df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     name = os.path.splitext(f.name)[0] + ".xlsx"
@@ -185,12 +234,19 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 All files processed!")
+    st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
-        data = f.read()
+        zip_data = f.read()
 
-    if st.download_button("📥 Download ZIP", data, file_name="ocr_results.zip"):
+    if st.download_button(
+        "📥 Download ZIP",
+        zip_data,
+        file_name="ocr_results.zip",
+        mime="application/zip"
+    ):
+        st.toast("✅ Download xong!", icon="🎉")
+
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
