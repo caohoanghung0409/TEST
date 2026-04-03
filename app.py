@@ -11,89 +11,106 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR SaaS Light", layout="wide")
+st.set_page_config(page_title="OCR SaaS PRO", layout="wide")
 
 # =========================
-# LIGHT UI STYLE
+# SIDEBAR (APP MENU)
 # =========================
-st.markdown("""
+with st.sidebar:
+    st.title("⚙️ OCR Tool")
+    theme = st.radio("🎨 Theme", ["Light", "Dark"])
+    st.markdown("---")
+    st.markdown("👨‍💻 Production UI")
+    st.markdown("🚀 Version 2.0")
+
+# =========================
+# THEME STYLE
+# =========================
+if theme == "Dark":
+    bg = "#0f172a"
+    card = "rgba(255,255,255,0.08)"
+    text = "white"
+else:
+    bg = "#f1f5f9"
+    card = "white"
+    text = "#0f172a"
+
+st.markdown(f"""
 <style>
 
 /* HIDE STREAMLIT */
-header {visibility: hidden;}
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
+header {{visibility: hidden;}}
+#MainMenu {{visibility: hidden;}}
+footer {{visibility: hidden;}}
 
 /* BACKGROUND */
-.stApp {
-    background: #f1f5f9;
-}
+.stApp {{
+    background: {bg};
+    color: {text};
+}}
 
 /* HEADER */
-.header {
+.header {{
     padding: 20px;
     border-radius: 16px;
     background: linear-gradient(90deg, #0ea5e9, #22c55e);
     color: white;
     text-align: center;
     margin-bottom: 20px;
-}
+}}
 
 /* STATS */
-.stats {
+.stats {{
     display: flex;
     gap: 15px;
     margin-bottom: 20px;
-}
+}}
 
-.stat-card {
+.stat-card {{
     flex: 1;
-    background: white;
+    background: {card};
     padding: 15px;
     border-radius: 14px;
     text-align: center;
     box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-}
+}}
 
 /* CARD */
-.card {
-    background: white;
+.card {{
+    background: {card};
     padding: 15px;
     border-radius: 14px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-}
+}}
 
-/* FILE NAME */
-.file-name {
+/* FILE */
+.file-name {{
     font-weight: 700;
     color: #0284c7;
-}
+}}
 
 /* PROGRESS */
-.progress-bar {
+.progress-bar {{
     width: 100%;
     height: 8px;
     background: #e5e7eb;
     border-radius: 10px;
     overflow: hidden;
     margin-top: 10px;
-}
+}}
 
-.progress-fill {
+.progress-fill {{
     height: 100%;
     background: linear-gradient(90deg, #0ea5e9, #22c55e);
-    transition: width 0.3s;
-}
+}}
 
 /* BUTTON */
-.stButton>button {
+.stButton>button {{
     background: linear-gradient(90deg, #0ea5e9, #22c55e);
     color: white;
     font-weight: 700;
     border-radius: 10px;
-    padding: 10px 20px;
-    border: none;
-}
+}}
 
 </style>
 """, unsafe_allow_html=True)
@@ -103,8 +120,8 @@ footer {visibility: hidden;}
 # =========================
 st.markdown("""
 <div class="header">
-    <h2>📄 OCR PDF Dashboard</h2>
-    <p>Extract SM & Date from PDFs nhanh chóng</p>
+    <h2>📄 OCR PDF SaaS Dashboard</h2>
+    <p>Production-ready UI • Multi-file OCR</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -122,7 +139,7 @@ def process_page(img):
 # =========================
 # PROCESS FILE
 # =========================
-def extract_pdf(file, status_box):
+def extract_pdf(file, status_box, global_progress, idx, total_files):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
@@ -131,11 +148,12 @@ def extract_pdf(file, status_box):
     for i, img in enumerate(images, start=1):
 
         percent = int((i / total_pages) * 100)
+        global_percent = int(((idx + (i/total_pages)) / total_files) * 100)
 
         html = f"""
 <div class="card">
     <div class="file-name">📁 {file.name}</div>
-    <div>📄 {i}/{total_pages} • Processing ({percent}%)</div>
+    <div>📄 {i}/{total_pages} • {percent}%</div>
     <div class="progress-bar">
         <div class="progress-fill" style="width:{percent}%"></div>
     </div>
@@ -143,6 +161,7 @@ def extract_pdf(file, status_box):
 """
 
         status_box.markdown(html, unsafe_allow_html=True)
+        global_progress.progress(global_percent)
 
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
@@ -155,7 +174,7 @@ def extract_pdf(file, status_box):
     status_box.markdown(f"""
 <div class="card">
     <div class="file-name">📁 {file.name}</div>
-    <div style="color:#16a34a;font-weight:700;">✅ DONE</div>
+    <div style="color:green;font-weight:700;">✅ DONE</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -171,7 +190,7 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# RUN
+# MAIN
 # =========================
 if uploaded_files:
 
@@ -182,12 +201,10 @@ if uploaded_files:
     </div>
     """, unsafe_allow_html=True)
 
-    cols = st.columns(len(uploaded_files))
-    status_boxes = []
+    global_progress = st.progress(0)
 
-    for i in range(len(uploaded_files)):
-        with cols[i]:
-            status_boxes.append(st.empty())
+    cols = st.columns(len(uploaded_files))
+    status_boxes = [cols[i].empty() for i in range(len(uploaded_files))]
 
     if st.button("🚀 Start OCR"):
 
@@ -197,7 +214,13 @@ if uploaded_files:
 
             for idx, file in enumerate(uploaded_files):
 
-                data = extract_pdf(file, status_boxes[idx])
+                data = extract_pdf(
+                    file,
+                    status_boxes[idx],
+                    global_progress,
+                    idx,
+                    len(uploaded_files)
+                )
 
                 if data:
                     df = pd.DataFrame(data)
@@ -223,7 +246,7 @@ if uploaded_files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, excel_name)
 
-        st.success("🎉 Hoàn tất!")
+        st.success("🎉 DONE ALL FILES!")
 
         with open(zip_buffer.name, "rb") as f:
             st.download_button("📥 Download ZIP", f, file_name="ocr_results.zip")
