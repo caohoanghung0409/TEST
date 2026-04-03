@@ -11,234 +11,199 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR Drive UI", layout="wide")
+st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
 # =========================
-# SESSION
-# =========================
-if "files_store" not in st.session_state:
-    st.session_state.files_store = []
-
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-
-if "done" not in st.session_state:
-    st.session_state.done = False
-
-# =========================
-# STYLE
+# UI STYLE FIX FULL
 # =========================
 st.markdown("""
 <style>
+
+/* 🔥 ẨN HEADER STREAMLIT */
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-.stApp { background: #f8fafc; }
-
-.header {
-    padding:15px;
-    font-size:20px;
-    font-weight:600;
+.stApp {
+    background: linear-gradient(135deg, #0ea5e9, #22c55e);
 }
 
-/* UPLOADER */
-[data-testid="stFileUploader"] {
-    border: 2px dashed #cbd5f5;
-    padding: 40px;
-    border-radius: 16px;
+/* TITLE */
+h1 {
     text-align: center;
-    background: white;
-    cursor: pointer;
+    color: white !important;
+    font-weight: 900;
 }
 
-/* ẨN FILE LIST MẶC ĐỊNH */
-[data-testid="stFileUploader"] ul {
-    display: none;
+/* CARD */
+.card {
+    background: rgba(255,255,255,0.95);
+    padding: 15px;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    text-align: center;
 }
 
-[data-testid="stFileUploader"] small { display: none; }
-[data-testid="stFileUploader"] label { display: none; }
-
-[data-testid="stFileUploader"]::before {
-    content: "📤 Drag & Drop hoặc click để chọn PDF";
-    display: block;
-    font-size: 16px;
-    color: #334155;
+/* FILE */
+.file-name {
+    font-weight: 700;
+    color: #0284c7;
 }
 
-/* FILE CARD */
-.file-card {
-    position: relative;
-    background: white;
-    padding: 14px;
-    border-radius: 12px;
-    margin-bottom: 10px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.05);
-}
-
-/* ❌ BUTTON */
-.delete-btn {
-    position:absolute;
-    top:6px;
-    right:10px;
+/* STATUS */
+.status {
+    font-size: 14px;
 }
 
 /* PROGRESS */
-.progress {
-    height:6px;
-    background:#e5e7eb;
-    border-radius:10px;
-    overflow:hidden;
-    margin-top:6px;
+.progress-bar {
+    width: 100%;
+    height: 10px;
+    background: #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 10px;
 }
 
-.progress-bar {
-    height:100%;
-    background:#0ea5e9;
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
 }
+
+/* BUTTON */
+.stButton>button {
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+    color: white;
+    font-weight: 700;
+    border-radius: 10px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# HEADER
-# =========================
-st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
+st.title("📄 OCR MULTI PDF DASHBOARD PRO")
 
-# =========================
-# UPLOAD
-# =========================
-uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
-
-if uploaded_files:
-    for f in uploaded_files:
-        if f.name not in [x["name"] for x in st.session_state.files_store]:
-            st.session_state.files_store.append({
-                "name": f.name,
-                "file": f
-            })
-
-# =========================
-# CUSTOM FILE LIST (WITH ❌ GÓC)
-# =========================
-for i, f in enumerate(st.session_state.files_store):
-
-    col1, col2 = st.columns([20,1])
-
-    with col1:
-        st.markdown(f"""
-        <div class="file-card">
-            📄 {f["name"]}
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        if st.button("❌", key=f"del_{i}"):
-            st.session_state.files_store.pop(i)
-            st.rerun()
 
 # =========================
 # OCR
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
+
     sm = re.search(r"(SM\d{4}\.\d{4})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
+
 # =========================
-# PROCESS
+# PROCESS FILE
 # =========================
-def extract_pdf(file, box, idx, total, global_bar):
+def extract_pdf(file, status_box):
     results = []
+
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-        percent = int((i/total_pages)*100)
-        global_percent = int(((idx + i/total_pages)/total)*100)
+
+        percent = int((i / total_pages) * 100)
 
         html = f"""
-<div class="file-card">
-📄 {file.name}<br>
-{i}/{total_pages} • {percent}%
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
+<div class="card">
+    <div class="file-name">📁 {file.name}</div>
+    <div class="status">📄 {i}/{total_pages} | ⚡ Processing ({percent}%)</div>
+    <div class="progress-bar">
+        <div class="progress-fill" style="width:{percent}%"></div>
+    </div>
 </div>
-</div>
-"""
-        box.markdown(html, unsafe_allow_html=True)
-        global_bar.progress(global_percent)
+""".strip()
+
+        status_box.markdown(html, unsafe_allow_html=True)
 
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, date = process_page(img)
+
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
+    done_html = f"""
+<div class="card">
+    <div class="file-name">📁 {file.name}</div>
+    <div style="color:green;font-weight:700;">✅ DONE</div>
+</div>
+""".strip()
+
+    status_box.markdown(done_html, unsafe_allow_html=True)
+
     return results
 
+
 # =========================
-# MAIN
+# UPLOAD
 # =========================
-if st.session_state.files_store:
+uploaded_files = st.file_uploader(
+    "📤 Upload nhiều PDF",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
-    global_bar = st.progress(0)
-    boxes = [st.empty() for _ in st.session_state.files_store]
 
-    if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Process Files"):
-            st.session_state.processing = True
-            st.rerun()
+# =========================
+# RUN
+# =========================
+if uploaded_files:
 
-    if st.session_state.processing:
+    st.success(f"📦 Tổng file: {len(uploaded_files)}")
+
+    cols = st.columns(len(uploaded_files))
+    status_boxes = []
+
+    for i in range(len(uploaded_files)):
+        with cols[i]:
+            box = st.empty()
+            status_boxes.append(box)
+
+    if st.button("🚀 START OCR"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(st.session_state.files_store):
 
-                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
+            for idx, file in enumerate(uploaded_files):
+
+                data = extract_pdf(file, status_boxes[idx])
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
+                    df.insert(0, "STT", range(1, len(df) + 1))
 
-                    name = os.path.splitext(f["name"])[0] + ".xlsx"
+                    base = os.path.splitext(file.name)[0]
+                    excel_name = f"{base}.xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
-
                         wb = load_workbook(tmp.name)
                         ws = wb.active
 
                         for col in ws.columns:
-                            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                            ws.column_dimensions[col[0].column_letter].width = max_len + 3
+                            max_len = 0
+                            col_letter = col[0].column_letter
+                            for c in col:
+                                if c.value:
+                                    max_len = max(max_len, len(str(c.value)))
+                            ws.column_dimensions[col_letter].width = max_len + 3
 
                         wb.save(tmp.name)
-                        zipf.write(tmp.name, name)
+                        zipf.write(tmp.name, excel_name)
 
-        st.session_state.zip = zip_buffer.name
-        st.session_state.processing = False
-        st.session_state.done = True
-        st.rerun()
+        st.success("🎉 HOÀN TẤT!")
 
-# =========================
-# DOWNLOAD + AUTO RELOAD
-# =========================
-if st.session_state.done:
-
-    with open(st.session_state.zip, "rb") as f:
-        zip_data = f.read()
-
-    if st.download_button(
-        "📥 Download ZIP",
-        zip_data,
-        file_name="ocr_results.zip",
-        mime="application/zip"
-    ):
-        st.markdown("""
-        <meta http-equiv="refresh" content="2">
-        """, unsafe_allow_html=True)
+        with open(zip_buffer.name, "rb") as f:
+            st.download_button(
+                "📥 DOWNLOAD ZIP",
+                f,
+                file_name="ocr_results.zip"
+            )
