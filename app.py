@@ -19,9 +19,6 @@ st.set_page_config(page_title="OCR Drive UI", layout="wide")
 if "done" not in st.session_state:
     st.session_state.done = False
 
-if "clear" not in st.session_state:
-    st.session_state.clear = False
-
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
@@ -62,7 +59,7 @@ footer {visibility: hidden;}
     color: #334155;
 }
 
-/* FILE LIST */
+/* FILE ITEM */
 .file-item {
     background:white;
     padding:12px;
@@ -102,22 +99,11 @@ st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=T
 # =========================
 # UPLOAD
 # =========================
-uploader_key = "u1" if not st.session_state.clear else "u2"
-
 files = st.file_uploader(
     "",
     type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
+    accept_multiple_files=True
 )
-
-# =========================
-# SHOW FILE LIST
-# =========================
-if files:
-    st.markdown("### 📂 File đã chọn")
-    for f in files:
-        st.markdown(f'<div class="file-item">📄 {f.name}</div>', unsafe_allow_html=True)
 
 # =========================
 # OCR
@@ -170,7 +156,6 @@ if files:
     global_bar = st.progress(0)
     boxes = [st.empty() for _ in files]
 
-    # 👉 ẨN NÚT KHI ĐANG CHẠY
     if not st.session_state.processing:
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
@@ -211,28 +196,28 @@ if files:
         st.rerun()
 
 # =========================
-# DOWNLOAD + RESET
+# DOWNLOAD + AUTO RELOAD
 # =========================
 if st.session_state.done:
 
     st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
-        if st.download_button(
-            "📥 Download ZIP",
-            f,
-            file_name="ocr_results.zip",
-            mime="application/zip"
-        ):
+        zip_data = f.read()
 
-            st.toast("✅ Download xong!", icon="🎉")
+    if st.download_button(
+        "📥 Download ZIP",
+        zip_data,
+        file_name="ocr_results.zip",
+        mime="application/zip"
+    ):
+        st.toast("✅ Download xong!", icon="🎉")
 
-            # RESET FULL
-            st.session_state.done = False
-            st.session_state.processing = False
-            st.session_state.clear = not st.session_state.clear
-
-            if "zip" in st.session_state:
-                del st.session_state["zip"]
-
-            st.rerun()
+        # 🔥 AUTO RELOAD SAU 2s
+        st.markdown("""
+        <script>
+        setTimeout(function(){
+            window.location.reload();
+        }, 2000);
+        </script>
+        """, unsafe_allow_html=True)
