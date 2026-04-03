@@ -23,7 +23,7 @@ if "clear" not in st.session_state:
     st.session_state.clear = False
 
 # =========================
-# STYLE
+# STYLE (FIX UPLOAD REAL)
 # =========================
 st.markdown("""
 <style>
@@ -41,30 +41,32 @@ footer {visibility: hidden;}
     font-weight:600;
 }
 
-/* UPLOAD */
-.upload-wrapper { position: relative; }
-
-.upload-box {
+/* 🔥 STYLE TRỰC TIẾP UPLOADER */
+[data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
     padding: 40px;
     border-radius: 16px;
-    text-align:center;
-    background:white;
-    margin-bottom:20px;
-    cursor:pointer;
+    text-align: center;
+    background: white;
+    cursor: pointer;
 }
 
-/* HIDE DEFAULT TEXT */
+/* ẨN TEXT MẶC ĐỊNH */
 [data-testid="stFileUploader"] small {
     display: none;
 }
 
-/* CLICK FULL */
-[data-testid="stFileUploader"] {
-    position:absolute;
-    top:0; left:0;
-    width:100%; height:100%;
-    opacity:0;
+/* ẨN LABEL */
+[data-testid="stFileUploader"] label {
+    display: none;
+}
+
+/* CUSTOM TEXT */
+[data-testid="stFileUploader"]::before {
+    content: "📤 Drag & Drop hoặc click để chọn PDF";
+    display: block;
+    font-size: 16px;
+    color: #334155;
 }
 
 /* FILE LIST */
@@ -105,11 +107,8 @@ footer {visibility: hidden;}
 st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOAD (REAL FIX)
 # =========================
-st.markdown('<div class="upload-wrapper">', unsafe_allow_html=True)
-st.markdown('<div class="upload-box">📤 Drag & Drop hoặc click để chọn PDF</div>', unsafe_allow_html=True)
-
 uploader_key = "u1" if not st.session_state.clear else "u2"
 
 files = st.file_uploader(
@@ -118,8 +117,6 @@ files = st.file_uploader(
     accept_multiple_files=True,
     key=uploader_key
 )
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
 # SHOW FILE LIST
@@ -180,7 +177,6 @@ if files:
     global_bar = st.progress(0)
     boxes = [st.empty() for _ in files]
 
-    # 🔥 CHẠY TRỰC TIẾP (KHÔNG RERUN BUG)
     if st.button("🚀 Process Files"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
@@ -224,7 +220,6 @@ if st.session_state.done:
 
             st.toast("✅ Download xong!", icon="🎉")
 
-            # RESET FULL
             st.session_state.done = False
             st.session_state.clear = not st.session_state.clear
 
