@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (CARD UI)
+# STYLE (CLEAN UI)
 # =========================
 st.markdown("""
 <style>
@@ -36,15 +36,13 @@ footer {visibility: hidden;}
 
 .stApp { background: #f8fafc; }
 
-/* FIX TOP */
 .block-container {
     padding-top: 0.5rem !important;
-    margin-top: -10px;
 }
 
 /* HEADER */
 .header {
-    padding:10px 15px;
+    padding:10px 0;
     font-size:20px;
     font-weight:600;
 }
@@ -56,28 +54,21 @@ footer {visibility: hidden;}
     border-radius: 16px;
     text-align: center;
     background: white;
-    cursor: pointer;
 }
 
-/* CARD */
-.card {
-    background: white;
-    padding: 16px;
-    border-radius: 16px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    margin-bottom: 10px;
+/* FILE ROW */
+.file-row {
+    font-size:14px;
+    margin-top:10px;
 }
 
-/* FILE NAME */
 .file-name {
-    font-weight: 600;
-    margin-bottom: 6px;
+    font-weight:500;
 }
 
-/* STATUS */
-.status {
-    font-size: 13px;
-    color: #64748b;
+.file-status {
+    color:#64748b;
+    font-size:13px;
 }
 
 /* PROGRESS */
@@ -86,12 +77,12 @@ footer {visibility: hidden;}
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:8px;
+    margin-top:4px;
 }
 
 .progress-bar {
     height:100%;
-    background:#0ea5e9;
+    background:linear-gradient(90deg,#0ea5e9,#22c55e);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -135,9 +126,9 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="card">
+<div class="file-row">
     <div class="file-name">📄 {file.name}</div>
-    <div class="status">Trang {i}/{total_pages} • {percent}%</div>
+    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
     <div class="progress">
         <div class="progress-bar" style="width:{percent}%"></div>
     </div>
@@ -146,7 +137,7 @@ def extract_pdf(file, box, idx, total, global_bar):
         box.markdown(html, unsafe_allow_html=True)
         global_bar.progress(global_percent)
 
-        # crop top 40%
+        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -161,22 +152,9 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 if uploaded_files:
 
-    st.markdown("### 📂 Danh sách file")
-
     global_bar = st.progress(0)
 
-    # hiển thị card từng file
-    boxes = []
-    for f in uploaded_files:
-        box = st.empty()
-        boxes.append(box)
-
-        box.markdown(f"""
-<div class="card">
-    <div class="file-name">📄 {f.name}</div>
-    <div class="status">⏳ Chờ xử lý...</div>
-</div>
-""", unsafe_allow_html=True)
+    boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
@@ -211,13 +189,13 @@ if uploaded_files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, name)
 
-    st.session_state.zip = zip_buffer.name
-    st.session_state.processing = False
-    st.session_state.done = True
-    st.rerun()
+        st.session_state.zip = zip_buffer.name
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
 # =========================
-# DOWNLOAD + RESET
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
