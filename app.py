@@ -9,10 +9,69 @@ import os
 from openpyxl import load_workbook
 
 # =========================
-# UI
+# UI CONFIG
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
-st.title("📄 OCR Nhiều PDF → Excel (Hiển thị từng trang)")
+
+st.markdown("""
+<style>
+
+/* Background */
+.stApp {
+    background: linear-gradient(135deg, #0ea5e9, #22c55e);
+    color: #111;
+}
+
+/* Title */
+h1 {
+    text-align: center;
+    color: white !important;
+    font-size: 38px !important;
+    font-weight: 800;
+}
+
+/* Card style */
+.block-container {
+    padding: 2rem 2rem 2rem 2rem;
+    background: rgba(255,255,255,0.92);
+    border-radius: 20px;
+    margin-top: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+}
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+    color: white;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-weight: bold;
+    border: none;
+}
+
+.stButton > button:hover {
+    transform: scale(1.02);
+    transition: 0.2s;
+}
+
+/* Progress bar */
+.stProgress > div > div {
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+}
+
+/* File uploader */
+div[data-testid="stFileUploader"] {
+    background: white;
+    padding: 15px;
+    border-radius: 15px;
+    border: 2px dashed #22c55e;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📄 OCR NHIỀU PDF → EXCEL (Hiển thị từng trang)")
+
 
 # =========================
 # OCR PAGE
@@ -34,7 +93,7 @@ def process_page(img):
 
 
 # =========================
-# EXTRACT 1 FILE (WITH PAGE PROGRESS)
+# EXTRACT PDF
 # =========================
 def extract_pdf(file, file_index, total_files):
     results = []
@@ -47,12 +106,10 @@ def extract_pdf(file, file_index, total_files):
 
     for i, img in enumerate(images, start=1):
 
-        # 👉 hiển thị rõ file + trang
-        file_status.text(
-            f"📁 File {file_index}/{total_files}: {file.name} | 📄 Trang {i}/{total_pages}"
+        file_status.info(
+            f"📁 File {file_index}/{total_files} → {file.name} | 📄 Trang {i}/{total_pages}"
         )
 
-        # crop tăng tốc
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -70,7 +127,7 @@ def extract_pdf(file, file_index, total_files):
 
 
 # =========================
-# AUTO WIDTH EXCEL
+# EXCEL AUTO WIDTH
 # =========================
 def auto_width(path):
     wb = load_workbook(path)
@@ -90,7 +147,7 @@ def auto_width(path):
 
 
 # =========================
-# UI INPUT
+# UPLOAD
 # =========================
 uploaded_files = st.file_uploader(
     "📤 Upload nhiều PDF",
@@ -98,23 +155,27 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
+
 # =========================
-# PROCESS ALL FILES
+# PROCESS
 # =========================
 if uploaded_files:
+    st.success(f"Đã chọn {len(uploaded_files)} file PDF")
+
     if st.button("🚀 Xử lý tất cả"):
         main_progress = st.progress(0)
         main_status = st.empty()
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-
         total_files = len(uploaded_files)
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
             for idx, file in enumerate(uploaded_files, start=1):
 
-                main_status.text(f"⚡ Đang xử lý file {idx}/{total_files}: {file.name}")
+                main_status.warning(
+                    f"⚡ Đang xử lý file {idx}/{total_files}: {file.name}"
+                )
 
                 data = extract_pdf(file, idx, total_files)
 
@@ -133,7 +194,7 @@ if uploaded_files:
 
                 main_progress.progress(idx / total_files)
 
-        main_status.text("✅ Hoàn tất tất cả file!")
+        main_status.success("✅ Hoàn tất tất cả file!")
 
         with open(zip_buffer.name, "rb") as f:
             st.download_button(
