@@ -23,7 +23,7 @@ if "clear" not in st.session_state:
     st.session_state.clear = False
 
 # =========================
-# STYLE (GOOGLE DRIVE)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -46,6 +46,10 @@ footer {visibility: hidden;}
 }
 
 /* UPLOAD BOX */
+.upload-wrapper {
+    position: relative;
+}
+
 .upload-box {
     border: 2px dashed #cbd5f5;
     padding: 40px;
@@ -53,6 +57,22 @@ footer {visibility: hidden;}
     text-align:center;
     background:white;
     margin-bottom:20px;
+    cursor:pointer;
+}
+
+/* HIDE DEFAULT TEXT */
+[data-testid="stFileUploader"] small {
+    display: none;
+}
+
+/* MAKE INPUT FULL BOX */
+[data-testid="stFileUploader"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
 }
 
 /* FILE LIST */
@@ -92,9 +112,28 @@ footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown("""
-<div class="header">📁 OCR Drive Tool</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
+
+# =========================
+# UPLOAD BOX (CLICKABLE)
+# =========================
+st.markdown('<div class="upload-wrapper">', unsafe_allow_html=True)
+
+st.markdown(
+    '<div class="upload-box">📤 Drag & Drop PDF hoặc click để chọn file</div>',
+    unsafe_allow_html=True
+)
+
+uploader_key = "u1" if not st.session_state.clear else "u2"
+
+files = st.file_uploader(
+    "",
+    type=["pdf"],
+    accept_multiple_files=True,
+    key=uploader_key
+)
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
 # OCR
@@ -146,20 +185,6 @@ def extract_pdf(file, box, idx, total, global_bar):
     return results
 
 # =========================
-# UPLOAD BOX
-# =========================
-st.markdown('<div class="upload-box">📤 Drag & Drop PDF hoặc chọn file bên dưới</div>', unsafe_allow_html=True)
-
-uploader_key = "u1" if not st.session_state.clear else "u2"
-
-files = st.file_uploader(
-    "",
-    type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
-)
-
-# =========================
 # MAIN
 # =========================
 if files:
@@ -203,7 +228,7 @@ if files:
         st.session_state.zip = zip_buffer.name
 
 # =========================
-# DOWNLOAD + RESET
+# DOWNLOAD + RESET FIX
 # =========================
 if st.session_state.done:
 
@@ -214,8 +239,12 @@ if st.session_state.done:
 
             st.toast("✅ Download xong!", icon="🎉")
 
-            # reset mượt
+            # RESET CHUẨN
             st.session_state.done = False
             st.session_state.clear = not st.session_state.clear
+
+            # clear thêm để chắc chắn
+            if "zip" in st.session_state:
+                del st.session_state["zip"]
 
             st.rerun()
