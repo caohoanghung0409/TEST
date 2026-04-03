@@ -11,55 +11,82 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR PDF Tool", layout="wide")
+st.set_page_config(page_title="OCR SaaS", layout="wide")
 
 # =========================
-# UI STYLE FIX FULL
+# SAAS UI STYLE
 # =========================
 st.markdown("""
 <style>
 
-/* 🔥 ẨN HEADER STREAMLIT */
+/* HIDE STREAMLIT */
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
+/* BACKGROUND */
 .stApp {
-    background: linear-gradient(135deg, #0ea5e9, #22c55e);
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: white;
 }
 
-/* TITLE */
-h1 {
+/* HEADER */
+.header {
+    padding: 20px;
+    border-radius: 16px;
+    background: linear-gradient(90deg, #0ea5e9, #22c55e);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
     text-align: center;
-    color: white !important;
-    font-weight: 900;
+    margin-bottom: 20px;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 32px;
+}
+
+.header p {
+    margin: 0;
+    opacity: 0.9;
+}
+
+/* STATS */
+.stats {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    flex: 1;
+    background: rgba(255,255,255,0.08);
+    padding: 15px;
+    border-radius: 14px;
+    text-align: center;
+    backdrop-filter: blur(10px);
 }
 
 /* CARD */
 .card {
-    background: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.08);
     padding: 15px;
     border-radius: 16px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-    text-align: center;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
 }
 
-/* FILE */
+/* FILE NAME */
 .file-name {
     font-weight: 700;
-    color: #0284c7;
-}
-
-/* STATUS */
-.status {
     font-size: 14px;
+    margin-bottom: 5px;
 }
 
 /* PROGRESS */
 .progress-bar {
     width: 100%;
-    height: 10px;
-    background: #e5e7eb;
+    height: 8px;
+    background: rgba(255,255,255,0.2);
     border-radius: 10px;
     overflow: hidden;
     margin-top: 10px;
@@ -67,21 +94,32 @@ h1 {
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #22c55e, #16a34a);
+    background: linear-gradient(90deg, #22c55e, #4ade80);
+    transition: width 0.3s;
 }
 
 /* BUTTON */
 .stButton>button {
-    background: linear-gradient(90deg, #0284c7, #22c55e);
+    background: linear-gradient(90deg, #0ea5e9, #22c55e);
     color: white;
     font-weight: 700;
-    border-radius: 10px;
+    border-radius: 12px;
+    padding: 10px 20px;
+    border: none;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 OCR MULTI PDF DASHBOARD PRO")
+# =========================
+# HEADER
+# =========================
+st.markdown("""
+<div class="header">
+    <h1>📄 OCR PDF SaaS Dashboard</h1>
+    <p>Extract SM & Date from multiple PDFs automatically</p>
+</div>
+""", unsafe_allow_html=True)
 
 
 # =========================
@@ -112,7 +150,7 @@ def extract_pdf(file, status_box):
         html = f"""
 <div class="card">
     <div class="file-name">📁 {file.name}</div>
-    <div class="status">📄 {i}/{total_pages} | ⚡ Processing ({percent}%)</div>
+    <div>📄 {i}/{total_pages} • Processing ({percent}%)</div>
     <div class="progress-bar">
         <div class="progress-fill" style="width:{percent}%"></div>
     </div>
@@ -129,14 +167,12 @@ def extract_pdf(file, status_box):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    done_html = f"""
+    status_box.markdown(f"""
 <div class="card">
     <div class="file-name">📁 {file.name}</div>
-    <div style="color:green;font-weight:700;">✅ DONE</div>
+    <div style="color:#4ade80;font-weight:700;">✅ DONE</div>
 </div>
-""".strip()
-
-    status_box.markdown(done_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
     return results
 
@@ -145,28 +181,31 @@ def extract_pdf(file, status_box):
 # UPLOAD
 # =========================
 uploaded_files = st.file_uploader(
-    "📤 Upload nhiều PDF",
+    "📤 Upload PDFs",
     type=["pdf"],
     accept_multiple_files=True
 )
 
-
 # =========================
-# RUN
+# STATS BAR
 # =========================
 if uploaded_files:
 
-    st.success(f"📦 Tổng file: {len(uploaded_files)}")
+    st.markdown(f"""
+    <div class="stats">
+        <div class="stat-card">📦 Files<br><b>{len(uploaded_files)}</b></div>
+        <div class="stat-card">⚡ Status<br><b>Ready</b></div>
+    </div>
+    """, unsafe_allow_html=True)
 
     cols = st.columns(len(uploaded_files))
     status_boxes = []
 
     for i in range(len(uploaded_files)):
         with cols[i]:
-            box = st.empty()
-            status_boxes.append(box)
+            status_boxes.append(st.empty())
 
-    if st.button("🚀 START OCR"):
+    if st.button("🚀 Start Processing"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
@@ -185,6 +224,7 @@ if uploaded_files:
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
+
                         wb = load_workbook(tmp.name)
                         ws = wb.active
 
@@ -199,11 +239,7 @@ if uploaded_files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, excel_name)
 
-        st.success("🎉 HOÀN TẤT!")
+        st.success("🎉 All files processed!")
 
         with open(zip_buffer.name, "rb") as f:
-            st.download_button(
-                "📥 DOWNLOAD ZIP",
-                f,
-                file_name="ocr_results.zip"
-            )
+            st.download_button("📥 Download ZIP", f, file_name="ocr_results.zip")
