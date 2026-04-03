@@ -9,13 +9,13 @@ import os
 from openpyxl import load_workbook
 
 # =========================
-# CONFIG UI
+# UI
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
-st.title("📄 OCR Nhiều PDF → Excel")
+st.title("📄 OCR Nhiều PDF → Excel (Hiển thị từng trang)")
 
 # =========================
-# OCR FUNCTION
+# OCR PAGE
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(
@@ -34,14 +34,24 @@ def process_page(img):
 
 
 # =========================
-# EXTRACT 1 PDF
+# EXTRACT 1 FILE (WITH PAGE PROGRESS)
 # =========================
-def extract_pdf(file):
+def extract_pdf(file, file_index, total_files):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
+    total_pages = len(images)
 
-    for img in images:
+    file_status = st.empty()
+    page_progress = st.progress(0)
+
+    for i, img in enumerate(images, start=1):
+
+        # 👉 hiển thị rõ file + trang
+        file_status.text(
+            f"📁 File {file_index}/{total_files}: {file.name} | 📄 Trang {i}/{total_pages}"
+        )
+
         # crop tăng tốc
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
@@ -54,11 +64,13 @@ def extract_pdf(file):
                 "Ngày": date
             })
 
+        page_progress.progress(i / total_pages)
+
     return results
 
 
 # =========================
-# AUTO WIDTH
+# AUTO WIDTH EXCEL
 # =========================
 def auto_width(path):
     wb = load_workbook(path)
@@ -78,34 +90,38 @@ def auto_width(path):
 
 
 # =========================
-# MAIN UI
+# UI INPUT
 # =========================
 uploaded_files = st.file_uploader(
-    "📤 Upload nhiều file PDF",
+    "📤 Upload nhiều PDF",
     type=["pdf"],
     accept_multiple_files=True
 )
 
+# =========================
+# PROCESS ALL FILES
+# =========================
 if uploaded_files:
     if st.button("🚀 Xử lý tất cả"):
-        progress = st.progress(0)
-        status = st.empty()
+        main_progress = st.progress(0)
+        main_status = st.empty()
+
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         total_files = len(uploaded_files)
-        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
-            for i, file in enumerate(uploaded_files, start=1):
-                status.text(f"⚡ Đang xử lý file {i}/{total_files}: {file.name}")
+            for idx, file in enumerate(uploaded_files, start=1):
 
-                data = extract_pdf(file)
+                main_status.text(f"⚡ Đang xử lý file {idx}/{total_files}: {file.name}")
+
+                data = extract_pdf(file, idx, total_files)
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df) + 1))
 
-                    # giữ tên file gốc
                     base_name = os.path.splitext(file.name)[0]
                     excel_name = f"{base_name}.xlsx"
 
@@ -115,11 +131,10 @@ if uploaded_files:
 
                         zipf.write(tmp.name, excel_name)
 
-                progress.progress(i / total_files)
+                main_progress.progress(idx / total_files)
 
-        status.text("✅ Hoàn tất tất cả file!")
+        main_status.text("✅ Hoàn tất tất cả file!")
 
-        # download ZIP
         with open(zip_buffer.name, "rb") as f:
             st.download_button(
                 "📥 Tải tất cả (ZIP)",
