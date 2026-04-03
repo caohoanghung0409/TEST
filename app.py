@@ -14,10 +14,16 @@ from openpyxl import load_workbook
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
 # =========================
-# UI STYLE (NEW MODERN)
+# UI STYLE FIX FULL
 # =========================
 st.markdown("""
 <style>
+
+/* 🔥 ẨN HEADER STREAMLIT */
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
 .stApp {
     background: linear-gradient(135deg, #0ea5e9, #22c55e);
 }
@@ -27,7 +33,6 @@ h1 {
     text-align: center;
     color: white !important;
     font-weight: 900;
-    letter-spacing: 1px;
 }
 
 /* CARD */
@@ -37,27 +42,20 @@ h1 {
     border-radius: 16px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.2);
     text-align: center;
-    transition: 0.3s;
 }
 
-.card:hover {
-    transform: translateY(-3px);
-}
-
-/* FILE NAME */
+/* FILE */
 .file-name {
     font-weight: 700;
     color: #0284c7;
-    margin-bottom: 8px;
 }
 
-/* STATUS TEXT */
+/* STATUS */
 .status {
     font-size: 14px;
-    margin-top: 5px;
 }
 
-/* PROGRESS BAR */
+/* PROGRESS */
 .progress-bar {
     width: 100%;
     height: 10px;
@@ -70,7 +68,6 @@ h1 {
 .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #22c55e, #16a34a);
-    transition: width 0.3s ease;
 }
 
 /* BUTTON */
@@ -79,21 +76,6 @@ h1 {
     color: white;
     font-weight: 700;
     border-radius: 10px;
-    padding: 10px 20px;
-    border: none;
-}
-
-.stButton>button:hover {
-    transform: scale(1.05);
-}
-
-/* SUCCESS BOX */
-.success-box {
-    background: #ecfdf5;
-    padding: 12px;
-    border-radius: 10px;
-    font-weight: 600;
-    color: #16a34a;
 }
 
 </style>
@@ -127,19 +109,17 @@ def extract_pdf(file, status_box):
 
         percent = int((i / total_pages) * 100)
 
-        status_box.markdown(
-            f"""
-            <div class="card">
-                <div class="file-name">📁 {file.name}</div>
-                <div class="status">📄 {i}/{total_pages} | ⚡ Processing ({percent}%)</div>
+        html = f"""
+<div class="card">
+    <div class="file-name">📁 {file.name}</div>
+    <div class="status">📄 {i}/{total_pages} | ⚡ Processing ({percent}%)</div>
+    <div class="progress-bar">
+        <div class="progress-fill" style="width:{percent}%"></div>
+    </div>
+</div>
+""".strip()
 
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width:{percent}%"></div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        status_box.markdown(html, unsafe_allow_html=True)
 
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
@@ -149,15 +129,14 @@ def extract_pdf(file, status_box):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    status_box.markdown(
-        f"""
-        <div class="card">
-            <div class="file-name">📁 {file.name}</div>
-            <div class="success-box">✅ DONE</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    done_html = f"""
+<div class="card">
+    <div class="file-name">📁 {file.name}</div>
+    <div style="color:green;font-weight:700;">✅ DONE</div>
+</div>
+""".strip()
+
+    status_box.markdown(done_html, unsafe_allow_html=True)
 
     return results
 
@@ -177,14 +156,7 @@ uploaded_files = st.file_uploader(
 # =========================
 if uploaded_files:
 
-    st.markdown(
-        f"""
-        <div class="card">
-            📦 Tổng file: <b>{len(uploaded_files)}</b>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.success(f"📦 Tổng file: {len(uploaded_files)}")
 
     cols = st.columns(len(uploaded_files))
     status_boxes = []
