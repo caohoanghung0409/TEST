@@ -14,17 +14,23 @@ from openpyxl import load_workbook
 st.set_page_config(page_title="OCR SaaS PRO", layout="wide")
 
 # =========================
-# SIDEBAR (APP MENU)
+# SESSION STATE
+# =========================
+if "done" not in st.session_state:
+    st.session_state.done = False
+
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
+
+# =========================
+# SIDEBAR
 # =========================
 with st.sidebar:
     st.title("⚙️ OCR Tool")
     theme = st.radio("🎨 Theme", ["Light", "Dark"])
-    st.markdown("---")
-    st.markdown("👨‍💻 Production UI")
-    st.markdown("🚀 Version 2.0")
 
 # =========================
-# THEME STYLE
+# THEME
 # =========================
 if theme == "Dark":
     bg = "#0f172a"
@@ -37,45 +43,15 @@ else:
 
 st.markdown(f"""
 <style>
-
-/* HIDE STREAMLIT */
 header {{visibility: hidden;}}
 #MainMenu {{visibility: hidden;}}
 footer {{visibility: hidden;}}
 
-/* BACKGROUND */
 .stApp {{
     background: {bg};
     color: {text};
 }}
 
-/* HEADER */
-.header {{
-    padding: 20px;
-    border-radius: 16px;
-    background: linear-gradient(90deg, #0ea5e9, #22c55e);
-    color: white;
-    text-align: center;
-    margin-bottom: 20px;
-}}
-
-/* STATS */
-.stats {{
-    display: flex;
-    gap: 15px;
-    margin-bottom: 20px;
-}}
-
-.stat-card {{
-    flex: 1;
-    background: {card};
-    padding: 15px;
-    border-radius: 14px;
-    text-align: center;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-}}
-
-/* CARD */
 .card {{
     background: {card};
     padding: 15px;
@@ -83,13 +59,6 @@ footer {{visibility: hidden;}}
     box-shadow: 0 4px 15px rgba(0,0,0,0.08);
 }}
 
-/* FILE */
-.file-name {{
-    font-weight: 700;
-    color: #0284c7;
-}}
-
-/* PROGRESS */
 .progress-bar {{
     width: 100%;
     height: 8px;
@@ -104,14 +73,12 @@ footer {{visibility: hidden;}}
     background: linear-gradient(90deg, #0ea5e9, #22c55e);
 }}
 
-/* BUTTON */
 .stButton>button {{
     background: linear-gradient(90deg, #0ea5e9, #22c55e);
     color: white;
     font-weight: 700;
     border-radius: 10px;
 }}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,10 +86,7 @@ footer {{visibility: hidden;}}
 # HEADER
 # =========================
 st.markdown("""
-<div class="header">
-    <h2>📄 OCR PDF SaaS Dashboard</h2>
-    <p>Production-ready UI • Multi-file OCR</p>
-</div>
+<h2 style='text-align:center;'>📄 OCR PDF Dashboard</h2>
 """, unsafe_allow_html=True)
 
 # =========================
@@ -152,11 +116,11 @@ def extract_pdf(file, status_box, global_progress, idx, total_files):
 
         html = f"""
 <div class="card">
-    <div class="file-name">📁 {file.name}</div>
-    <div>📄 {i}/{total_pages} • {percent}%</div>
-    <div class="progress-bar">
-        <div class="progress-fill" style="width:{percent}%"></div>
-    </div>
+📁 {file.name}<br>
+📄 {i}/{total_pages} • {percent}%
+<div class="progress-bar">
+<div class="progress-fill" style="width:{percent}%"></div>
+</div>
 </div>
 """
 
@@ -172,34 +136,27 @@ def extract_pdf(file, status_box, global_progress, idx, total_files):
             results.append({"SM": sm, "Ngày": date})
 
     status_box.markdown(f"""
-<div class="card">
-    <div class="file-name">📁 {file.name}</div>
-    <div style="color:green;font-weight:700;">✅ DONE</div>
-</div>
+<div class="card">📁 {file.name}<br>✅ DONE</div>
 """, unsafe_allow_html=True)
 
     return results
 
 # =========================
-# UPLOAD
+# UPLOADER (RESET KEY)
 # =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+
 uploaded_files = st.file_uploader(
     "📤 Upload PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
 
 # =========================
 # MAIN
 # =========================
 if uploaded_files:
-
-    st.markdown(f"""
-    <div class="stats">
-        <div class="stat-card">📦 Files<br><b>{len(uploaded_files)}</b></div>
-        <div class="stat-card">⚡ Status<br><b>Ready</b></div>
-    </div>
-    """, unsafe_allow_html=True)
 
     global_progress = st.progress(0)
 
@@ -246,7 +203,24 @@ if uploaded_files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, excel_name)
 
-        st.success("🎉 DONE ALL FILES!")
+        st.session_state.done = True
+        st.session_state.zip_path = zip_buffer.name
 
-        with open(zip_buffer.name, "rb") as f:
-            st.download_button("📥 Download ZIP", f, file_name="ocr_results.zip")
+# =========================
+# DOWNLOAD + SMOOTH RESET
+# =========================
+if st.session_state.done:
+
+    st.success("🎉 Xử lý xong!")
+
+    with open(st.session_state.zip_path, "rb") as f:
+        if st.download_button("📥 Download ZIP", f, file_name="ocr_results.zip"):
+
+            # 🔥 RESET MƯỢT (KHÔNG RELOAD)
+            st.session_state.done = False
+            st.session_state.clear_uploader = not st.session_state.clear_uploader
+
+            # Toast kiểu SaaS
+            st.toast("✅ Download thành công!", icon="🎉")
+
+            st.rerun()
