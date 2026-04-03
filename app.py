@@ -16,14 +16,14 @@ st.set_page_config(page_title="OCR Drive UI", layout="wide")
 # =========================
 # SESSION
 # =========================
-if "files_store" not in st.session_state:
-    st.session_state.files_store = []
-
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
 if "done" not in st.session_state:
     st.session_state.done = False
+
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
 
 # =========================
 # STYLE
@@ -52,11 +52,6 @@ footer {visibility: hidden;}
     cursor: pointer;
 }
 
-/* ẨN LIST MẶC ĐỊNH */
-[data-testid="stFileUploader"] ul {
-    display: none;
-}
-
 [data-testid="stFileUploader"] small { display: none; }
 [data-testid="stFileUploader"] label { display: none; }
 
@@ -67,23 +62,18 @@ footer {visibility: hidden;}
     color: #334155;
 }
 
-/* FILE LIST (GIỐNG uploader) */
-.file-inline {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    background:#f1f5f9;
-    padding:8px 12px;
-    border-radius:8px;
+/* PROGRESS */
+.progress {
+    height:6px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
     margin-top:6px;
-    font-size:14px;
 }
 
-/* DELETE */
-.del-btn {
-    color:red;
-    font-weight:bold;
-    cursor:pointer;
+.progress-bar {
+    height:100%;
+    background:#0ea5e9;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -94,37 +84,16 @@ footer {visibility: hidden;}
 st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOADER (GIỮ NGUYÊN)
 # =========================
-uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
-# lưu file
-if uploaded_files:
-    for f in uploaded_files:
-        if f.name not in [x["name"] for x in st.session_state.files_store]:
-            st.session_state.files_store.append({
-                "name": f.name,
-                "file": f
-            })
-
-# =========================
-# FILE LIST NGAY DƯỚI UPLOADER
-# =========================
-for i, f in enumerate(st.session_state.files_store):
-
-    col1, col2 = st.columns([20,1])
-
-    with col1:
-        st.markdown(f"""
-        <div class="file-inline">
-            📄 {f["name"]}
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        if st.button("❌", key=f"del_{i}"):
-            st.session_state.files_store.pop(i)
-            st.rerun()
+uploaded_files = st.file_uploader(
+    "",
+    type=["pdf"],
+    accept_multiple_files=True,
+    key=uploader_key
+)
 
 # =========================
 # OCR
@@ -147,7 +116,16 @@ def extract_pdf(file, box, idx, total, global_bar):
         percent = int((i/total_pages)*100)
         global_percent = int(((idx + i/total_pages)/total)*100)
 
-        box.progress(percent)
+        html = f"""
+<div>
+📄 {file.name}<br>
+{i}/{total_pages} • {percent}%
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+"""
+        box.markdown(html, unsafe_allow_html=True)
         global_bar.progress(global_percent)
 
         w, h = img.size
@@ -162,10 +140,11 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 # MAIN
 # =========================
-if st.session_state.files_store:
+if uploaded_files:
 
     global_bar = st.progress(0)
-    boxes = [st.empty() for _ in st.session_state.files_store]
+    cols = st.columns(len(uploaded_files))
+    boxes = [cols[i].empty() for i in range(len(uploaded_files))]
 
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
@@ -177,15 +156,15 @@ if st.session_state.files_store:
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(st.session_state.files_store):
+            for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
+                data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    name = os.path.splitext(f["name"])[0] + ".xlsx"
+                    name = os.path.splitext(f.name)[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
@@ -206,9 +185,11 @@ if st.session_state.files_store:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD + RESET
 # =========================
 if st.session_state.done:
+
+    st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
@@ -219,4 +200,9 @@ if st.session_state.done:
         file_name="ocr_results.zip",
         mime="application/zip"
     ):
-        st.markdown('<meta http-equiv="refresh" content="2">', unsafe_allow_html=True)
+        st.toast("✅ Download xong!", icon="🎉")
+
+        # reset uploader (xóa file + reset UI)
+        st.session_state.done = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
