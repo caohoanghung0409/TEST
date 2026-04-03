@@ -16,11 +16,14 @@ st.set_page_config(page_title="OCR Drive UI", layout="wide")
 # =========================
 # SESSION
 # =========================
-if "done" not in st.session_state:
-    st.session_state.done = False
+if "files_store" not in st.session_state:
+    st.session_state.files_store = []
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
+
+if "done" not in st.session_state:
+    st.session_state.done = False
 
 # =========================
 # STYLE
@@ -61,11 +64,22 @@ footer {visibility: hidden;}
 
 /* FILE ITEM */
 .file-item {
+    position: relative;
     background:white;
     padding:12px;
     border-radius:10px;
     margin-bottom:8px;
     box-shadow:0 2px 6px rgba(0,0,0,0.05);
+}
+
+/* DELETE BTN */
+.delete-btn {
+    position:absolute;
+    top:6px;
+    right:10px;
+    color:red;
+    font-weight:bold;
+    cursor:pointer;
 }
 
 /* PROGRESS */
@@ -99,11 +113,30 @@ st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=T
 # =========================
 # UPLOAD
 # =========================
-files = st.file_uploader(
-    "",
-    type=["pdf"],
-    accept_multiple_files=True
-)
+uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
+
+# 👉 Lưu file vào store (tránh mất khi rerun)
+if uploaded_files:
+    for f in uploaded_files:
+        if f.name not in [x["name"] for x in st.session_state.files_store]:
+            st.session_state.files_store.append({
+                "name": f.name,
+                "file": f
+            })
+
+# =========================
+# FILE LIST + DELETE
+# =========================
+for i, f in enumerate(st.session_state.files_store):
+    col1, col2 = st.columns([10,1])
+
+    with col1:
+        st.markdown(f'<div class="file-item">📄 {f["name"]}</div>', unsafe_allow_html=True)
+
+    with col2:
+        if st.button("❌", key=f"del_{i}"):
+            st.session_state.files_store.pop(i)
+            st.rerun()
 
 # =========================
 # OCR
@@ -151,31 +184,32 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 # MAIN
 # =========================
-if files:
+if st.session_state.files_store:
 
     global_bar = st.progress(0)
-    boxes = [st.empty() for _ in files]
+    boxes = [st.empty() for _ in st.session_state.files_store]
 
-    if not st.session_state.processing:
+    # 👉 PROCESS BUTTON (chỉ hiện 1 lần)
+    if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
-    else:
-        st.info("⏳ Đang xử lý...")
+    # 👉 PROCESSING
+    if st.session_state.processing:
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(files):
+            for i, f in enumerate(st.session_state.files_store):
 
-                data = extract_pdf(f, boxes[i], i, len(files), global_bar)
+                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    name = os.path.splitext(f.name)[0] + ".xlsx"
+                    name = os.path.splitext(f["name"])[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
@@ -190,9 +224,9 @@ if files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, name)
 
-        st.session_state.done = True
         st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
+        st.session_state.done = True
         st.rerun()
 
 # =========================
@@ -213,11 +247,12 @@ if st.session_state.done:
     ):
         st.toast("✅ Download xong!", icon="🎉")
 
-        # 🔥 AUTO RELOAD SAU 2s
+        # 🔥 AUTO RELOAD CHẮC CHẮN
         st.markdown("""
+        <meta http-equiv="refresh" content="2">
         <script>
         setTimeout(function(){
-            window.location.reload();
+            window.location.href = window.location.pathname;
         }, 2000);
         </script>
         """, unsafe_allow_html=True)
