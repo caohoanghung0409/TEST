@@ -13,35 +13,72 @@ from openpyxl import load_workbook
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
+# =========================
+# STYLE (HYBRID UI)
+# =========================
 st.markdown("""
 <style>
 .stApp {
     background: linear-gradient(135deg, #0ea5e9, #22c55e);
 }
 
+/* Title */
 h1 {
     text-align: center;
     color: white !important;
     font-weight: 900;
 }
 
-.block {
-    background: rgba(255,255,255,0.92);
-    padding: 12px;
-    border-radius: 12px;
-    font-weight: 600;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-    text-align: center;
-    white-space: nowrap;
+/* Card */
+.card {
+    background: rgba(255,255,255,0.95);
+    padding: 15px;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    margin-bottom: 10px;
+}
+
+/* File name */
+.file-name {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+/* Status text */
+.status {
+    font-size: 14px;
+    margin-top: 6px;
+}
+
+/* Progress bar custom */
+.progress-bar {
+    height: 8px;
+    border-radius: 10px;
+    background: #e5e7eb;
+    margin-top: 10px;
     overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+}
+
+/* Button */
+.stButton > button {
+    width: 100%;
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+    color: white;
+    border-radius: 12px;
+    padding: 12px;
+    font-weight: 700;
+    border: none;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 OCR MULTI PDF DASHBOARD (GRID MODE)")
-
+st.title("📄 OCR MULTI PDF → EXCEL (HYBRID UI)")
 
 # =========================
 # OCR
@@ -56,9 +93,29 @@ def process_page(img):
 
 
 # =========================
+# UPDATE CARD UI
+# =========================
+def update_card(box, file_name, page, total, percent, status_text):
+
+    box.markdown(f"""
+    <div class="card">
+        <div class="file-name">📁 {file_name}</div>
+
+        <div class="status">
+            📄 {page}/{total} | {status_text} ({int(percent*100)}%)
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" style="width:{percent*100}%"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# =========================
 # PROCESS FILE
 # =========================
-def extract_pdf(file, status_box, file_idx, total_files):
+def extract_pdf(file, box):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
@@ -66,15 +123,15 @@ def extract_pdf(file, status_box, file_idx, total_files):
 
     for i, img in enumerate(images, start=1):
 
-        # update đúng 1 ô (không xuống dòng)
-        status_box.markdown(
-            f"""
-            <div class="block">
-            📁 {file.name}<br>
-            📄 {i}/{total_pages} | ⚡ Processing
-            </div>
-            """,
-            unsafe_allow_html=True
+        percent = i / total_pages
+
+        update_card(
+            box,
+            file.name,
+            i,
+            total_pages,
+            percent,
+            "⚡ Processing"
         )
 
         w, h = img.size
@@ -85,14 +142,14 @@ def extract_pdf(file, status_box, file_idx, total_files):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    status_box.markdown(
-        f"""
-        <div class="block">
-        📁 {file.name}<br>
-        ✅ DONE
-        </div>
-        """,
-        unsafe_allow_html=True
+    # DONE
+    update_card(
+        box,
+        file.name,
+        total_pages,
+        total_pages,
+        1,
+        "✅ Done"
     )
 
     return results
@@ -107,23 +164,21 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-
 # =========================
 # RUN
 # =========================
 if uploaded_files:
 
-    st.success(f"Đã chọn {len(uploaded_files)} file")
+    st.success(f"📦 Đã chọn {len(uploaded_files)} file")
 
-    # 🔥 CHIA CỘT THEO SỐ FILE
-    cols = st.columns(len(uploaded_files))
+    # 👉 GRID responsive
+    cols = st.columns(min(len(uploaded_files), 4))  # max 4 cột / hàng
 
-    status_boxes = []
-
-    for i in range(len(uploaded_files)):
-        with cols[i]:
+    boxes = []
+    for i, file in enumerate(uploaded_files):
+        with cols[i % 4]:
             box = st.empty()
-            status_boxes.append(box)
+            boxes.append(box)
 
     if st.button("🚀 START OCR"):
 
@@ -133,12 +188,7 @@ if uploaded_files:
 
             for idx, file in enumerate(uploaded_files):
 
-                data = extract_pdf(
-                    file,
-                    status_boxes[idx],
-                    idx,
-                    len(uploaded_files)
-                )
+                data = extract_pdf(file, boxes[idx])
 
                 if data:
                     df = pd.DataFrame(data)
@@ -149,6 +199,7 @@ if uploaded_files:
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
+
                         wb = load_workbook(tmp.name)
                         ws = wb.active
 
@@ -163,7 +214,7 @@ if uploaded_files:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, excel_name)
 
-        st.success("🎉 HOÀN TẤT!")
+        st.success("🎉 HOÀN TẤT TẤT CẢ!")
 
         with open(zip_buffer.name, "rb") as f:
             st.download_button(
