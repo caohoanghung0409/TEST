@@ -4,55 +4,64 @@ from pdf2image import convert_from_bytes
 import pandas as pd
 import re
 import tempfile
+import zipfile
+import os
 from openpyxl import load_workbook
 
+# =========================
+# CONFIG UI
+# =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
+st.title("📄 OCR Nhiều PDF → Excel")
 
-st.title("📄 OCR PDF → Excel (SM + Ngày)")
-
+# =========================
+# OCR FUNCTION
+# =========================
 def process_page(img):
-    for angle in [0, 180]:
-        rotated = img.rotate(angle, expand=True)
+    text = pytesseract.image_to_string(
+        img,
+        lang='eng',
+        config='--oem 3 --psm 6'
+    )
 
-        text = pytesseract.image_to_string(
-            rotated,
-            lang='eng',
-            config='--oem 3 --psm 6'
-        )
+    sm = re.search(r"(SM\d{4}\.\d{4})", text)
+    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
 
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-
-        if sm and date:
-            return sm.group(1), date.group(1)
+    if sm and date:
+        return sm.group(1), date.group(1)
 
     return None, None
 
 
-def extract_pdf(uploaded_file):
+# =========================
+# EXTRACT 1 PDF
+# =========================
+def extract_pdf(file):
     results = []
 
-    images = convert_from_bytes(uploaded_file.read(), dpi=200)
+    images = convert_from_bytes(file.read(), dpi=150)
 
-    for i, img in enumerate(images, start=1):
-        st.write(f"👉 Trang {i}")
+    for img in images:
+        # crop tăng tốc
+        w, h = img.size
+        img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, date = process_page(img)
 
         if sm and date:
-            st.success(f"{sm} - {date}")
             results.append({
                 "SM": sm,
                 "Ngày": date
             })
-        else:
-            st.error("Không đọc được")
 
     return results
 
 
-def auto_width(excel_path):
-    wb = load_workbook(excel_path)
+# =========================
+# AUTO WIDTH
+# =========================
+def auto_width(path):
+    wb = load_workbook(path)
     ws = wb.active
 
     for col in ws.columns:
@@ -65,31 +74,55 @@ def auto_width(excel_path):
 
         ws.column_dimensions[col_letter].width = max_len + 3
 
-    wb.save(excel_path)
+    wb.save(path)
 
 
-uploaded_file = st.file_uploader("📤 Upload PDF", type=["pdf"])
+# =========================
+# MAIN UI
+# =========================
+uploaded_files = st.file_uploader(
+    "📤 Upload nhiều file PDF",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
-if uploaded_file:
-    if st.button("🚀 Xử lý"):
-        with st.spinner("Đang OCR..."):
-            data = extract_pdf(uploaded_file)
+if uploaded_files:
+    if st.button("🚀 Xử lý tất cả"):
+        progress = st.progress(0)
+        status = st.empty()
 
-        if not data:
-            st.error("❌ Không có dữ liệu")
-        else:
-            df = pd.DataFrame(data)
-            df.insert(0, "STT", range(1, len(df) + 1))
+        total_files = len(uploaded_files)
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                df.to_excel(tmp.name, index=False)
-                auto_width(tmp.name)
+        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
-                with open(tmp.name, "rb") as f:
-                    st.download_button(
-                        "📥 Tải Excel",
-                        f,
-                        file_name="output.xlsx"
-                    )
+            for i, file in enumerate(uploaded_files, start=1):
+                status.text(f"⚡ Đang xử lý file {i}/{total_files}: {file.name}")
 
-            st.success("✅ Hoàn tất!")
+                data = extract_pdf(file)
+
+                if data:
+                    df = pd.DataFrame(data)
+                    df.insert(0, "STT", range(1, len(df) + 1))
+
+                    # giữ tên file gốc
+                    base_name = os.path.splitext(file.name)[0]
+                    excel_name = f"{base_name}.xlsx"
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                        df.to_excel(tmp.name, index=False)
+                        auto_width(tmp.name)
+
+                        zipf.write(tmp.name, excel_name)
+
+                progress.progress(i / total_files)
+
+        status.text("✅ Hoàn tất tất cả file!")
+
+        # download ZIP
+        with open(zip_buffer.name, "rb") as f:
+            st.download_button(
+                "📥 Tải tất cả (ZIP)",
+                f,
+                file_name="ocr_results.zip"
+            )
