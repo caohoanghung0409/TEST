@@ -22,6 +22,9 @@ if "done" not in st.session_state:
 if "clear" not in st.session_state:
     st.session_state.clear = False
 
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
 # =========================
 # STYLE
 # =========================
@@ -35,20 +38,14 @@ footer {visibility: hidden;}
     background: #f8fafc;
 }
 
-/* HEADER */
 .header {
-    display:flex;
-    align-items:center;
-    gap:10px;
     padding:15px;
     font-size:20px;
     font-weight:600;
 }
 
 /* UPLOAD BOX */
-.upload-wrapper {
-    position: relative;
-}
+.upload-wrapper { position: relative; }
 
 .upload-box {
     border: 2px dashed #cbd5f5;
@@ -65,23 +62,21 @@ footer {visibility: hidden;}
     display: none;
 }
 
-/* MAKE INPUT FULL BOX */
+/* FULL CLICK */
 [data-testid="stFileUploader"] {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    opacity:0;
 }
 
 /* FILE LIST */
-.file-row {
+.file-item {
     background:white;
-    padding:15px;
-    border-radius:12px;
-    margin-bottom:10px;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
+    padding:12px;
+    border-radius:10px;
+    margin-bottom:8px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.05);
 }
 
 /* PROGRESS */
@@ -90,7 +85,7 @@ footer {visibility: hidden;}
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:8px;
+    margin-top:6px;
 }
 
 .progress-bar {
@@ -98,14 +93,12 @@ footer {visibility: hidden;}
     background:#0ea5e9;
 }
 
-/* BUTTON */
 .stButton>button {
     background:#0ea5e9;
     color:white;
     border-radius:8px;
     font-weight:600;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,14 +108,10 @@ footer {visibility: hidden;}
 st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD BOX (CLICKABLE)
+# UPLOAD BOX
 # =========================
 st.markdown('<div class="upload-wrapper">', unsafe_allow_html=True)
-
-st.markdown(
-    '<div class="upload-box">📤 Drag & Drop PDF hoặc click để chọn file</div>',
-    unsafe_allow_html=True
-)
+st.markdown('<div class="upload-box">📤 Drag & Drop hoặc click để chọn PDF</div>', unsafe_allow_html=True)
 
 uploader_key = "u1" if not st.session_state.clear else "u2"
 
@@ -136,14 +125,20 @@ files = st.file_uploader(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
+# SHOW FILE LIST (NEW FIX)
+# =========================
+if files:
+    st.markdown("### 📂 File đã chọn")
+    for f in files:
+        st.markdown(f'<div class="file-item">📄 {f.name}</div>', unsafe_allow_html=True)
+
+# =========================
 # OCR
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-
     sm = re.search(r"(SM\d{4}\.\d{4})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
@@ -159,7 +154,7 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="file-row">
+<div class="file-item">
 📄 {file.name}<br>
 {i}/{total_pages} • {percent}%
 <div class="progress">
@@ -174,14 +169,10 @@ def extract_pdf(file, box, idx, total, global_bar):
         img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, date = process_page(img)
-
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    box.markdown(f"""
-<div class="file-row">📄 {file.name} ✅ DONE</div>
-""", unsafe_allow_html=True)
-
+    box.markdown(f'<div class="file-item">📄 {file.name} ✅ DONE</div>', unsafe_allow_html=True)
     return results
 
 # =========================
@@ -189,20 +180,21 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 if files:
 
-    st.write(f"📦 {len(files)} file đã chọn")
-
     global_bar = st.progress(0)
-
     boxes = [st.empty() for _ in files]
 
-    if st.button("🚀 Process Files"):
+    # 🔥 ẨN BUTTON KHI ĐANG CHẠY
+    if not st.session_state.processing:
+        if st.button("🚀 Process Files"):
+            st.session_state.processing = True
+            st.rerun()
+
+    if st.session_state.processing:
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-
             for i, f in enumerate(files):
-
                 data = extract_pdf(f, boxes[i], i, len(files), global_bar)
 
                 if data:
@@ -226,24 +218,26 @@ if files:
 
         st.session_state.done = True
         st.session_state.zip = zip_buffer.name
+        st.session_state.processing = False
+        st.rerun()
 
 # =========================
-# DOWNLOAD + RESET FIX
+# DOWNLOAD + RESET (FIX CHUẨN)
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xong!")
+    st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
         if st.download_button("📥 Download ZIP", f):
 
             st.toast("✅ Download xong!", icon="🎉")
 
-            # RESET CHUẨN
+            # RESET FULL
             st.session_state.done = False
             st.session_state.clear = not st.session_state.clear
+            st.session_state.processing = False
 
-            # clear thêm để chắc chắn
             if "zip" in st.session_state:
                 del st.session_state["zip"]
 
