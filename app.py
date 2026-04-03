@@ -22,9 +22,6 @@ if "done" not in st.session_state:
 if "clear" not in st.session_state:
     st.session_state.clear = False
 
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-
 # =========================
 # STYLE
 # =========================
@@ -44,7 +41,7 @@ footer {visibility: hidden;}
     font-weight:600;
 }
 
-/* UPLOAD BOX */
+/* UPLOAD */
 .upload-wrapper { position: relative; }
 
 .upload-box {
@@ -62,7 +59,7 @@ footer {visibility: hidden;}
     display: none;
 }
 
-/* FULL CLICK */
+/* CLICK FULL */
 [data-testid="stFileUploader"] {
     position:absolute;
     top:0; left:0;
@@ -108,7 +105,7 @@ footer {visibility: hidden;}
 st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD BOX
+# UPLOAD
 # =========================
 st.markdown('<div class="upload-wrapper">', unsafe_allow_html=True)
 st.markdown('<div class="upload-box">📤 Drag & Drop hoặc click để chọn PDF</div>', unsafe_allow_html=True)
@@ -125,7 +122,7 @@ files = st.file_uploader(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
-# SHOW FILE LIST (NEW FIX)
+# SHOW FILE LIST
 # =========================
 if files:
     st.markdown("### 📂 File đã chọn")
@@ -183,18 +180,14 @@ if files:
     global_bar = st.progress(0)
     boxes = [st.empty() for _ in files]
 
-    # 🔥 ẨN BUTTON KHI ĐANG CHẠY
-    if not st.session_state.processing:
-        if st.button("🚀 Process Files"):
-            st.session_state.processing = True
-            st.rerun()
-
-    if st.session_state.processing:
+    # 🔥 CHẠY TRỰC TIẾP (KHÔNG RERUN BUG)
+    if st.button("🚀 Process Files"):
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
             for i, f in enumerate(files):
+
                 data = extract_pdf(f, boxes[i], i, len(files), global_bar)
 
                 if data:
@@ -218,11 +211,9 @@ if files:
 
         st.session_state.done = True
         st.session_state.zip = zip_buffer.name
-        st.session_state.processing = False
-        st.rerun()
 
 # =========================
-# DOWNLOAD + RESET (FIX CHUẨN)
+# DOWNLOAD + RESET
 # =========================
 if st.session_state.done:
 
@@ -236,7 +227,6 @@ if st.session_state.done:
             # RESET FULL
             st.session_state.done = False
             st.session_state.clear = not st.session_state.clear
-            st.session_state.processing = False
 
             if "zip" in st.session_state:
                 del st.session_state["zip"]
