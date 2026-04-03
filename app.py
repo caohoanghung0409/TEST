@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (ANIMATION DRIVE STYLE)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -65,12 +65,26 @@ footer {visibility: hidden;}
     font-weight:500;
 }
 
+/* PDF ICON */
+.pdf-icon {
+    display:inline-block;
+    background:linear-gradient(135deg,#ef4444,#dc2626);
+    color:white;
+    font-size:11px;
+    font-weight:600;
+    padding:3px 6px;
+    border-radius:6px;
+    margin-right:6px;
+    letter-spacing:0.5px;
+}
+
+/* STATUS */
 .file-status {
     font-size:13px;
     color:#64748b;
 }
 
-/* PROGRESS BAR BASE */
+/* PROGRESS */
 .progress {
     height:6px;
     background:#e5e7eb;
@@ -80,14 +94,13 @@ footer {visibility: hidden;}
     position: relative;
 }
 
-/* NORMAL PROGRESS */
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
     transition: width 0.3s ease;
 }
 
-/* SHIMMER EFFECT */
+/* SHIMMER */
 .progress-anim::before {
     content: "";
     position: absolute;
@@ -134,8 +147,8 @@ uploaded_files = st.file_uploader(
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+    sm = re.search(r"(SM\\d{4}\\.\\d{4})", text)
+    date = re.search(r"(\\d{2}/\\d{2}/\\d{4})", text)
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
@@ -152,7 +165,9 @@ def extract_pdf(file, box, idx, total, global_bar):
 
         html = f"""
 <div class="file-row">
-    <div class="file-name">📄 {file.name}</div>
+    <div class="file-name">
+        <span class="pdf-icon">PDF</span> {file.name}
+    </div>
     <div class="file-status">Đang xử lý • Trang {i}/{total_pages} • {percent}%</div>
     <div class="progress progress-anim">
         <div class="progress-bar" style="width:{percent}%"></div>
@@ -162,7 +177,6 @@ def extract_pdf(file, box, idx, total, global_bar):
         box.markdown(html, unsafe_allow_html=True)
         global_bar.progress(global_percent)
 
-        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -170,10 +184,12 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    # DONE STATE (tắt animation)
+    # DONE
     box.markdown(f"""
 <div class="file-row">
-    <div class="file-name">📄 {file.name}</div>
+    <div class="file-name">
+        <span class="pdf-icon">PDF</span> {file.name}
+    </div>
     <div class="file-status">✅ Hoàn tất</div>
     <div class="progress">
         <div class="progress-bar" style="width:100%"></div>
