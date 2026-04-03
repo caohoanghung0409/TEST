@@ -9,72 +9,77 @@ import os
 from openpyxl import load_workbook
 
 # =========================
-# UI CONFIG
+# PAGE CONFIG
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
+# =========================
+# MODERN UI (Dashboard style)
+# =========================
 st.markdown("""
 <style>
 
-/* Background */
+/* nền app */
 .stApp {
     background: linear-gradient(135deg, #0ea5e9, #22c55e);
-    color: #111;
 }
 
-/* Title */
+/* title */
 h1 {
     text-align: center;
     color: white !important;
-    font-size: 38px !important;
-    font-weight: 800;
+    font-size: 40px !important;
+    font-weight: 900;
+    margin-bottom: 10px;
 }
 
-/* Card style */
+/* container */
 .block-container {
-    padding: 2rem 2rem 2rem 2rem;
-    background: rgba(255,255,255,0.92);
-    border-radius: 20px;
-    margin-top: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    padding: 1.5rem;
 }
 
-/* Buttons */
-.stButton > button {
-    background: linear-gradient(90deg, #0284c7, #22c55e);
-    color: white;
-    border-radius: 10px;
-    padding: 10px 20px;
-    font-weight: bold;
-    border: none;
-}
-
-.stButton > button:hover {
-    transform: scale(1.02);
-    transition: 0.2s;
-}
-
-/* Progress bar */
-.stProgress > div > div {
-    background: linear-gradient(90deg, #0284c7, #22c55e);
-}
-
-/* File uploader */
+/* uploader */
 div[data-testid="stFileUploader"] {
     background: white;
     padding: 15px;
-    border-radius: 15px;
+    border-radius: 14px;
     border: 2px dashed #22c55e;
+}
+
+/* button */
+.stButton > button {
+    width: 100%;
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+    color: white;
+    border-radius: 12px;
+    padding: 12px;
+    font-weight: 700;
+    border: none;
+}
+
+/* status box */
+.status-box {
+    background: rgba(255,255,255,0.92);
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-top: 10px;
+    font-weight: 600;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+/* progress */
+.stProgress > div > div {
+    background: linear-gradient(90deg, #0284c7, #22c55e);
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 OCR NHIỀU PDF → EXCEL (Hiển thị từng trang)")
+st.title("📄 OCR MULTI PDF → EXCEL DASHBOARD")
 
 
 # =========================
-# OCR PAGE
+# OCR FUNCTION
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(
@@ -93,21 +98,27 @@ def process_page(img):
 
 
 # =========================
-# EXTRACT PDF
+# EXTRACT PDF (ONE LINE STATUS)
 # =========================
-def extract_pdf(file, file_index, total_files):
+def extract_pdf(file, file_index, total_files, status_holder):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
-    file_status = st.empty()
     page_progress = st.progress(0)
 
     for i, img in enumerate(images, start=1):
 
-        file_status.info(
-            f"📁 File {file_index}/{total_files} → {file.name} | 📄 Trang {i}/{total_pages}"
+        # ✅ GOM 1 DÒNG STATUS
+        status_holder.markdown(
+            f"""
+            <div class="status-box">
+            📁 File {file_index}/{total_files} | {file.name}  
+            📄 Trang {i}/{total_pages} | ⚡ Đang xử lý...
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
         w, h = img.size
@@ -116,10 +127,7 @@ def extract_pdf(file, file_index, total_files):
         sm, date = process_page(img)
 
         if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date
-            })
+            results.append({"SM": sm, "Ngày": date})
 
         page_progress.progress(i / total_pages)
 
@@ -127,7 +135,7 @@ def extract_pdf(file, file_index, total_files):
 
 
 # =========================
-# EXCEL AUTO WIDTH
+# AUTO WIDTH EXCEL
 # =========================
 def auto_width(path):
     wb = load_workbook(path)
@@ -157,27 +165,28 @@ uploaded_files = st.file_uploader(
 
 
 # =========================
-# PROCESS
+# PROCESS ALL
 # =========================
 if uploaded_files:
-    st.success(f"Đã chọn {len(uploaded_files)} file PDF")
 
-    if st.button("🚀 Xử lý tất cả"):
+    st.success(f"📦 Đã chọn {len(uploaded_files)} file")
+
+    if st.button("🚀 START PROCESS"):
         main_progress = st.progress(0)
         main_status = st.empty()
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
         total_files = len(uploaded_files)
 
+        status_holder = st.empty()
+
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
 
             for idx, file in enumerate(uploaded_files, start=1):
 
-                main_status.warning(
-                    f"⚡ Đang xử lý file {idx}/{total_files}: {file.name}"
-                )
+                main_status.info(f"⚡ Processing {file.name} ({idx}/{total_files})")
 
-                data = extract_pdf(file, idx, total_files)
+                data = extract_pdf(file, idx, total_files, status_holder)
 
                 if data:
                     df = pd.DataFrame(data)
@@ -194,11 +203,11 @@ if uploaded_files:
 
                 main_progress.progress(idx / total_files)
 
-        main_status.success("✅ Hoàn tất tất cả file!")
+        main_status.success("🎉 HOÀN TẤT TẤT CẢ FILE!")
 
         with open(zip_buffer.name, "rb") as f:
             st.download_button(
-                "📥 Tải tất cả (ZIP)",
+                "📥 DOWNLOAD ALL (ZIP)",
                 f,
                 file_name="ocr_results.zip"
             )
