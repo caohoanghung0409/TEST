@@ -13,34 +13,93 @@ from openpyxl import load_workbook
 # =========================
 st.set_page_config(page_title="OCR PDF Tool", layout="wide")
 
+# =========================
+# UI STYLE (NEW MODERN)
+# =========================
 st.markdown("""
 <style>
 .stApp {
     background: linear-gradient(135deg, #0ea5e9, #22c55e);
 }
 
+/* TITLE */
 h1 {
     text-align: center;
     color: white !important;
     font-weight: 900;
+    letter-spacing: 1px;
 }
 
-.block {
-    background: rgba(255,255,255,0.92);
-    padding: 12px;
-    border-radius: 12px;
-    font-weight: 600;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+/* CARD */
+.card {
+    background: rgba(255,255,255,0.95);
+    padding: 15px;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.2);
     text-align: center;
-    white-space: nowrap;
+    transition: 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+}
+
+/* FILE NAME */
+.file-name {
+    font-weight: 700;
+    color: #0284c7;
+    margin-bottom: 8px;
+}
+
+/* STATUS TEXT */
+.status {
+    font-size: 14px;
+    margin-top: 5px;
+}
+
+/* PROGRESS BAR */
+.progress-bar {
+    width: 100%;
+    height: 10px;
+    background: #e5e7eb;
+    border-radius: 10px;
     overflow: hidden;
-    text-overflow: ellipsis;
+    margin-top: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    transition: width 0.3s ease;
+}
+
+/* BUTTON */
+.stButton>button {
+    background: linear-gradient(90deg, #0284c7, #22c55e);
+    color: white;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 10px 20px;
+    border: none;
+}
+
+.stButton>button:hover {
+    transform: scale(1.05);
+}
+
+/* SUCCESS BOX */
+.success-box {
+    background: #ecfdf5;
+    padding: 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    color: #16a34a;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 OCR MULTI PDF DASHBOARD (GRID MODE)")
+st.title("📄 OCR MULTI PDF DASHBOARD PRO")
 
 
 # =========================
@@ -58,7 +117,7 @@ def process_page(img):
 # =========================
 # PROCESS FILE
 # =========================
-def extract_pdf(file, status_box, file_idx, total_files):
+def extract_pdf(file, status_box):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
@@ -66,12 +125,17 @@ def extract_pdf(file, status_box, file_idx, total_files):
 
     for i, img in enumerate(images, start=1):
 
-        # update đúng 1 ô (không xuống dòng)
+        percent = int((i / total_pages) * 100)
+
         status_box.markdown(
             f"""
-            <div class="block">
-            📁 {file.name}<br>
-            📄 {i}/{total_pages} | ⚡ Processing
+            <div class="card">
+                <div class="file-name">📁 {file.name}</div>
+                <div class="status">📄 {i}/{total_pages} | ⚡ Processing ({percent}%)</div>
+
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width:{percent}%"></div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True
@@ -87,9 +151,9 @@ def extract_pdf(file, status_box, file_idx, total_files):
 
     status_box.markdown(
         f"""
-        <div class="block">
-        📁 {file.name}<br>
-        ✅ DONE
+        <div class="card">
+            <div class="file-name">📁 {file.name}</div>
+            <div class="success-box">✅ DONE</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -113,11 +177,16 @@ uploaded_files = st.file_uploader(
 # =========================
 if uploaded_files:
 
-    st.success(f"Đã chọn {len(uploaded_files)} file")
+    st.markdown(
+        f"""
+        <div class="card">
+            📦 Tổng file: <b>{len(uploaded_files)}</b>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # 🔥 CHIA CỘT THEO SỐ FILE
     cols = st.columns(len(uploaded_files))
-
     status_boxes = []
 
     for i in range(len(uploaded_files)):
@@ -133,12 +202,7 @@ if uploaded_files:
 
             for idx, file in enumerate(uploaded_files):
 
-                data = extract_pdf(
-                    file,
-                    status_boxes[idx],
-                    idx,
-                    len(uploaded_files)
-                )
+                data = extract_pdf(file, status_boxes[idx])
 
                 if data:
                     df = pd.DataFrame(data)
