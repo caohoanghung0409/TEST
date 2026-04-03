@@ -22,8 +22,11 @@ if "done" not in st.session_state:
 if "clear" not in st.session_state:
     st.session_state.clear = False
 
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
 # =========================
-# STYLE (FIX UPLOAD REAL)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -31,9 +34,7 @@ header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-.stApp {
-    background: #f8fafc;
-}
+.stApp { background: #f8fafc; }
 
 .header {
     padding:15px;
@@ -41,7 +42,7 @@ footer {visibility: hidden;}
     font-weight:600;
 }
 
-/* 🔥 STYLE TRỰC TIẾP UPLOADER */
+/* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
     padding: 40px;
@@ -51,17 +52,9 @@ footer {visibility: hidden;}
     cursor: pointer;
 }
 
-/* ẨN TEXT MẶC ĐỊNH */
-[data-testid="stFileUploader"] small {
-    display: none;
-}
+[data-testid="stFileUploader"] small { display: none; }
+[data-testid="stFileUploader"] label { display: none; }
 
-/* ẨN LABEL */
-[data-testid="stFileUploader"] label {
-    display: none;
-}
-
-/* CUSTOM TEXT */
 [data-testid="stFileUploader"]::before {
     content: "📤 Drag & Drop hoặc click để chọn PDF";
     display: block;
@@ -107,7 +100,7 @@ footer {visibility: hidden;}
 st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD (REAL FIX)
+# UPLOAD
 # =========================
 uploader_key = "u1" if not st.session_state.clear else "u2"
 
@@ -177,7 +170,14 @@ if files:
     global_bar = st.progress(0)
     boxes = [st.empty() for _ in files]
 
-    if st.button("🚀 Process Files"):
+    # 👉 ẨN NÚT KHI ĐANG CHẠY
+    if not st.session_state.processing:
+        if st.button("🚀 Process Files"):
+            st.session_state.processing = True
+            st.rerun()
+
+    else:
+        st.info("⏳ Đang xử lý...")
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
@@ -207,6 +207,8 @@ if files:
 
         st.session_state.done = True
         st.session_state.zip = zip_buffer.name
+        st.session_state.processing = False
+        st.rerun()
 
 # =========================
 # DOWNLOAD + RESET
@@ -216,11 +218,18 @@ if st.session_state.done:
     st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
-        if st.download_button("📥 Download ZIP", f):
+        if st.download_button(
+            "📥 Download ZIP",
+            f,
+            file_name="ocr_results.zip",
+            mime="application/zip"
+        ):
 
             st.toast("✅ Download xong!", icon="🎉")
 
+            # RESET FULL
             st.session_state.done = False
+            st.session_state.processing = False
             st.session_state.clear = not st.session_state.clear
 
             if "zip" in st.session_state:
