@@ -16,14 +16,14 @@ st.set_page_config(page_title="OCR Drive UI", layout="wide")
 # =========================
 # SESSION
 # =========================
-if "files_store" not in st.session_state:
-    st.session_state.files_store = []
+if "done" not in st.session_state:
+    st.session_state.done = False
+
+if "clear" not in st.session_state:
+    st.session_state.clear = False
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
-
-if "done" not in st.session_state:
-    st.session_state.done = False
 
 # =========================
 # STYLE
@@ -62,24 +62,13 @@ footer {visibility: hidden;}
     color: #334155;
 }
 
-/* FILE ITEM */
+/* FILE LIST */
 .file-item {
-    position: relative;
     background:white;
     padding:12px;
     border-radius:10px;
     margin-bottom:8px;
     box-shadow:0 2px 6px rgba(0,0,0,0.05);
-}
-
-/* DELETE BTN */
-.delete-btn {
-    position:absolute;
-    top:6px;
-    right:10px;
-    color:red;
-    font-weight:bold;
-    cursor:pointer;
 }
 
 /* PROGRESS */
@@ -113,30 +102,22 @@ st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=T
 # =========================
 # UPLOAD
 # =========================
-uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
+uploader_key = "u1" if not st.session_state.clear else "u2"
 
-# 👉 Lưu file vào store (tránh mất khi rerun)
-if uploaded_files:
-    for f in uploaded_files:
-        if f.name not in [x["name"] for x in st.session_state.files_store]:
-            st.session_state.files_store.append({
-                "name": f.name,
-                "file": f
-            })
+files = st.file_uploader(
+    "",
+    type=["pdf"],
+    accept_multiple_files=True,
+    key=uploader_key
+)
 
 # =========================
-# FILE LIST + DELETE
+# SHOW FILE LIST
 # =========================
-for i, f in enumerate(st.session_state.files_store):
-    col1, col2 = st.columns([10,1])
-
-    with col1:
-        st.markdown(f'<div class="file-item">📄 {f["name"]}</div>', unsafe_allow_html=True)
-
-    with col2:
-        if st.button("❌", key=f"del_{i}"):
-            st.session_state.files_store.pop(i)
-            st.rerun()
+if files:
+    st.markdown("### 📂 File đã chọn")
+    for f in files:
+        st.markdown(f'<div class="file-item">📄 {f.name}</div>', unsafe_allow_html=True)
 
 # =========================
 # OCR
@@ -184,32 +165,32 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 # MAIN
 # =========================
-if st.session_state.files_store:
+if files:
 
     global_bar = st.progress(0)
-    boxes = [st.empty() for _ in st.session_state.files_store]
+    boxes = [st.empty() for _ in files]
 
-    # 👉 PROCESS BUTTON (chỉ hiện 1 lần)
-    if not st.session_state.processing and not st.session_state.done:
+    # 👉 ẨN NÚT KHI ĐANG CHẠY
+    if not st.session_state.processing:
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
-    # 👉 PROCESSING
-    if st.session_state.processing:
+    else:
+        st.info("⏳ Đang xử lý...")
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(st.session_state.files_store):
+            for i, f in enumerate(files):
 
-                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
+                data = extract_pdf(f, boxes[i], i, len(files), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    name = os.path.splitext(f["name"])[0] + ".xlsx"
+                    name = os.path.splitext(f.name)[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
@@ -224,35 +205,34 @@ if st.session_state.files_store:
                         wb.save(tmp.name)
                         zipf.write(tmp.name, name)
 
+        st.session_state.done = True
         st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
-        st.session_state.done = True
         st.rerun()
 
 # =========================
-# DOWNLOAD + AUTO RELOAD
+# DOWNLOAD + RESET
 # =========================
 if st.session_state.done:
 
     st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
-        zip_data = f.read()
+        if st.download_button(
+            "📥 Download ZIP",
+            f,
+            file_name="ocr_results.zip",
+            mime="application/zip"
+        ):
 
-    if st.download_button(
-        "📥 Download ZIP",
-        zip_data,
-        file_name="ocr_results.zip",
-        mime="application/zip"
-    ):
-        st.toast("✅ Download xong!", icon="🎉")
+            st.toast("✅ Download xong!", icon="🎉")
 
-        # 🔥 AUTO RELOAD CHẮC CHẮN
-        st.markdown("""
-        <meta http-equiv="refresh" content="2">
-        <script>
-        setTimeout(function(){
-            window.location.href = window.location.pathname;
-        }, 2000);
-        </script>
-        """, unsafe_allow_html=True)
+            # RESET FULL
+            st.session_state.done = False
+            st.session_state.processing = False
+            st.session_state.clear = not st.session_state.clear
+
+            if "zip" in st.session_state:
+                del st.session_state["zip"]
+
+            st.rerun()
