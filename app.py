@@ -52,6 +52,11 @@ footer {visibility: hidden;}
     cursor: pointer;
 }
 
+/* ẨN FILE LIST MẶC ĐỊNH */
+[data-testid="stFileUploader"] ul {
+    display: none;
+}
+
 [data-testid="stFileUploader"] small { display: none; }
 [data-testid="stFileUploader"] label { display: none; }
 
@@ -62,24 +67,21 @@ footer {visibility: hidden;}
     color: #334155;
 }
 
-/* FILE ITEM */
-.file-item {
+/* FILE CARD */
+.file-card {
     position: relative;
-    background:white;
-    padding:12px;
-    border-radius:10px;
-    margin-bottom:8px;
+    background: white;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 10px;
     box-shadow:0 2px 6px rgba(0,0,0,0.05);
 }
 
-/* DELETE BTN */
+/* ❌ BUTTON */
 .delete-btn {
     position:absolute;
     top:6px;
     right:10px;
-    color:red;
-    font-weight:bold;
-    cursor:pointer;
 }
 
 /* PROGRESS */
@@ -95,13 +97,6 @@ footer {visibility: hidden;}
     height:100%;
     background:#0ea5e9;
 }
-
-.stButton>button {
-    background:#0ea5e9;
-    color:white;
-    border-radius:8px;
-    font-weight:600;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,7 +110,6 @@ st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=T
 # =========================
 uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
 
-# 👉 Lưu file vào store (tránh mất khi rerun)
 if uploaded_files:
     for f in uploaded_files:
         if f.name not in [x["name"] for x in st.session_state.files_store]:
@@ -125,13 +119,18 @@ if uploaded_files:
             })
 
 # =========================
-# FILE LIST + DELETE
+# CUSTOM FILE LIST (WITH ❌ GÓC)
 # =========================
 for i, f in enumerate(st.session_state.files_store):
-    col1, col2 = st.columns([10,1])
+
+    col1, col2 = st.columns([20,1])
 
     with col1:
-        st.markdown(f'<div class="file-item">📄 {f["name"]}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="file-card">
+            📄 {f["name"]}
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
         if st.button("❌", key=f"del_{i}"):
@@ -160,7 +159,7 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="file-item">
+<div class="file-card">
 📄 {file.name}<br>
 {i}/{total_pages} • {percent}%
 <div class="progress">
@@ -178,7 +177,6 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    box.markdown(f'<div class="file-item">📄 {file.name} ✅ DONE</div>', unsafe_allow_html=True)
     return results
 
 # =========================
@@ -189,13 +187,11 @@ if st.session_state.files_store:
     global_bar = st.progress(0)
     boxes = [st.empty() for _ in st.session_state.files_store]
 
-    # 👉 PROCESS BUTTON (chỉ hiện 1 lần)
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
-    # 👉 PROCESSING
     if st.session_state.processing:
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
@@ -234,8 +230,6 @@ if st.session_state.files_store:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xử lý xong!")
-
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
@@ -245,14 +239,6 @@ if st.session_state.done:
         file_name="ocr_results.zip",
         mime="application/zip"
     ):
-        st.toast("✅ Download xong!", icon="🎉")
-
-        # 🔥 AUTO RELOAD CHẮC CHẮN
         st.markdown("""
         <meta http-equiv="refresh" content="2">
-        <script>
-        setTimeout(function(){
-            window.location.href = window.location.pathname;
-        }, 2000);
-        </script>
         """, unsafe_allow_html=True)
