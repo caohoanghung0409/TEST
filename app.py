@@ -6,6 +6,7 @@ import re
 import tempfile
 import zipfile
 import os
+import time
 from openpyxl import load_workbook
 
 # =========================
@@ -26,7 +27,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE PRO
+# STYLE MAX PRO
 # =========================
 st.markdown("""
 <style>
@@ -35,10 +36,6 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 
 .stApp { background: #f8fafc; }
-
-.block-container {
-    padding-top: 0.5rem !important;
-}
 
 .header {
     padding:10px 0;
@@ -51,7 +48,6 @@ footer {visibility: hidden;}
     border: 2px dashed #cbd5f5;
     padding: 30px;
     border-radius: 16px;
-    text-align: center;
     background: white;
 }
 
@@ -84,54 +80,66 @@ footer {visibility: hidden;}
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
 }
 
-/* GLOBAL PRO BAR */
+/* GLOBAL BAR */
 .global-wrap {
-    margin-top:10px;
-    margin-bottom:20px;
+    margin:15px 0;
 }
 
 .global-bar {
     position:relative;
-    height:14px;
+    height:18px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
 }
 
+/* dynamic fill */
 .global-fill {
     height:100%;
-    background:linear-gradient(90deg,#0ea5e9,#22c55e);
     border-radius:999px;
-    transition: width 0.3s ease;
+    transition: width 0.4s ease;
 }
 
-/* shimmer effect */
-.global-fill::after {
-    content:'';
+/* stripe animation */
+.global-fill::before {
+    content:"";
     position:absolute;
-    top:0;
-    left:-40%;
-    width:40%;
+    width:100%;
     height:100%;
-    background:linear-gradient(90deg,transparent,rgba(255,255,255,0.5),transparent);
-    animation:shine 1.5s infinite;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
 }
 
-@keyframes shine {
-    100% { left:140%; }
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
 }
 
-/* TEXT INSIDE BAR */
+/* TEXT */
 .global-text {
     position:absolute;
     width:100%;
     text-align:center;
-    top:0;
-    left:0;
     font-size:12px;
     font-weight:600;
-    line-height:14px;
+    top:0;
+    line-height:18px;
     color:#0f172a;
+}
+
+/* META INFO */
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    margin-bottom:5px;
+    color:#475569;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -163,14 +171,33 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
+# COLOR LOGIC
+# =========================
+def get_color(percent):
+    if percent < 30:
+        return "#0ea5e9"  # xanh dương
+    elif percent < 70:
+        return "#f59e0b"  # vàng
+    elif percent < 100:
+        return "#ef4444"  # đỏ
+    else:
+        return "#22c55e"  # xanh lá
+
+# =========================
 # GLOBAL BAR RENDER
 # =========================
-def render_global_bar(percent):
+def render_global_bar(percent, speed, eta):
+    color = get_color(percent)
+
     html = f"""
 <div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>🚀 {speed:.2f} pages/s • ⏳ ETA: {eta}s</div>
+    </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%"></div>
-        <div class="global-text">⚡ {percent}%</div>
+        <div class="global-fill" style="width:{percent}%; background:{color};"></div>
+        <div class="global-text">{percent}%</div>
     </div>
 </div>
 """
@@ -179,17 +206,27 @@ def render_global_bar(percent):
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, idx, total, global_box):
+def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, total_pages_all):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-        percent = int((i/total_pages)*100)
-        global_percent = int(((idx + i/total_pages)/total)*100)
+        processed_pages[0] += 1
 
-        # 👉 GLOBAL PRO BAR
-        global_box.markdown(render_global_bar(global_percent), unsafe_allow_html=True)
+        percent = int((i/total_pages)*100)
+        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+
+        # speed + ETA
+        elapsed = time.time() - start_time
+        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
+        remaining = total_pages_all - processed_pages[0]
+        eta = int(remaining / speed) if speed > 0 else 0
+
+        global_box.markdown(
+            render_global_bar(global_percent, speed, eta),
+            unsafe_allow_html=True
+        )
 
         html = f"""
 <div class="file-row">
@@ -202,7 +239,7 @@ def extract_pdf(file, box, idx, total, global_box):
 """
         box.markdown(html, unsafe_allow_html=True)
 
-        # crop top
+        # crop
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -227,6 +264,15 @@ if uploaded_files:
 
     if st.session_state.processing:
 
+        start_time = time.time()
+
+        # đếm tổng pages trước
+        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+        for f in uploaded_files:
+            f.seek(0)
+
+        processed_pages = [0]
+
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
@@ -234,7 +280,7 @@ if uploaded_files:
 
                 data = extract_pdf(
                     f, boxes[i], i, len(uploaded_files),
-                    global_box
+                    global_box, start_time, processed_pages, total_pages_all
                 )
 
                 if data:
