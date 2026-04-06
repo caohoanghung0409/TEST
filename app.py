@@ -27,7 +27,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE MAX PRO
+# STYLE MAX PRO (UPDATED)
 # =========================
 st.markdown("""
 <style>
@@ -38,7 +38,7 @@ footer {visibility: hidden;}
 .stApp { background: #f8fafc; }
 
 .header {
-    padding:10px 0;
+    padding:5px 0;
     font-size:20px;
     font-weight:600;
 }
@@ -46,15 +46,24 @@ footer {visibility: hidden;}
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 30px;
+    padding: 20px;
     border-radius: 16px;
     background: white;
+}
+
+/* fake PDF icon */
+[data-testid="stFileUploader"] section div div::before {
+    content: "📄 PDF";
+    font-weight:600;
+    display:block;
+    margin-bottom:10px;
+    color:#ef4444;
 }
 
 /* FILE */
 .file-row {
     font-size:14px;
-    margin-top:10px;
+    margin-top:6px;
 }
 
 .file-name {
@@ -82,7 +91,7 @@ footer {visibility: hidden;}
 
 /* GLOBAL BAR */
 .global-wrap {
-    margin:15px 0;
+    margin:5px 0 10px 0;
 }
 
 .global-bar {
@@ -93,14 +102,12 @@ footer {visibility: hidden;}
     overflow:hidden;
 }
 
-/* dynamic fill */
 .global-fill {
     height:100%;
     border-radius:999px;
     transition: width 0.4s ease;
 }
 
-/* stripe animation */
 .global-fill::before {
     content:"";
     position:absolute;
@@ -121,7 +128,6 @@ footer {visibility: hidden;}
     to { background-position: 40px 0; }
 }
 
-/* TEXT */
 .global-text {
     position:absolute;
     width:100%;
@@ -133,12 +139,11 @@ footer {visibility: hidden;}
     color:#0f172a;
 }
 
-/* META INFO */
 .global-meta {
     display:flex;
     justify-content:space-between;
     font-size:12px;
-    margin-bottom:5px;
+    margin-bottom:3px;
     color:#475569;
 }
 </style>
@@ -148,6 +153,11 @@ footer {visibility: hidden;}
 # HEADER
 # =========================
 st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+
+# =========================
+# GLOBAL BAR (ĐƯA LÊN TRÊN)
+# =========================
+global_box = st.empty()
 
 # =========================
 # UPLOADER
@@ -175,13 +185,13 @@ def process_page(img):
 # =========================
 def get_color(percent):
     if percent < 30:
-        return "#0ea5e9"  # xanh dương
+        return "#0ea5e9"
     elif percent < 70:
-        return "#f59e0b"  # vàng
+        return "#f59e0b"
     elif percent < 100:
-        return "#ef4444"  # đỏ
+        return "#ef4444"
     else:
-        return "#22c55e"  # xanh lá
+        return "#22c55e"
 
 # =========================
 # GLOBAL BAR RENDER
@@ -189,7 +199,7 @@ def get_color(percent):
 def render_global_bar(percent, speed, eta):
     color = get_color(percent)
 
-    html = f"""
+    return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
@@ -201,12 +211,11 @@ def render_global_bar(percent, speed, eta):
     </div>
 </div>
 """
-    return html
 
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file, box, start_time, processed_pages, total_pages_all):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
@@ -217,7 +226,6 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
         percent = int((i/total_pages)*100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
-        # speed + ETA
         elapsed = time.time() - start_time
         speed = processed_pages[0] / elapsed if elapsed > 0 else 0
         remaining = total_pages_all - processed_pages[0]
@@ -228,7 +236,7 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
             unsafe_allow_html=True
         )
 
-        html = f"""
+        box.markdown(f"""
 <div class="file-row">
     <div class="file-name">📄 {file.name}</div>
     <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
@@ -236,10 +244,8 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
         <div class="progress-bar" style="width:{percent}%"></div>
     </div>
 </div>
-"""
-        box.markdown(html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-        # crop
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -254,7 +260,6 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
 # =========================
 if uploaded_files:
 
-    global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
@@ -266,7 +271,6 @@ if uploaded_files:
 
         start_time = time.time()
 
-        # đếm tổng pages trước
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
             f.seek(0)
@@ -279,8 +283,8 @@ if uploaded_files:
             for i, f in enumerate(uploaded_files):
 
                 data = extract_pdf(
-                    f, boxes[i], i, len(uploaded_files),
-                    global_box, start_time, processed_pages, total_pages_all
+                    f, boxes[i],
+                    start_time, processed_pages, total_pages_all
                 )
 
                 if data:
