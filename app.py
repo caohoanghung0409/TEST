@@ -58,6 +58,19 @@ footer {visibility: hidden;}
     background: white;
 }
 
+/* 🔥 FIX KHOẢNG CÁCH NÚT */
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 10px;
+}
+
+/* button đẹp hơn */
+div.stButton > button {
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-weight: 600;
+}
+
 /* file */
 .file-row {
     font-size:14px;
@@ -257,9 +270,15 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
+
+        # 🔥 FIX KHOẢNG CÁCH NÚT
+        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
+
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
 
