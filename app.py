@@ -174,7 +174,7 @@ st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_ht
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
-    "📂 Kéo thả hoặc chọn file PDF",
+    "📂 Upload file PDF",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
