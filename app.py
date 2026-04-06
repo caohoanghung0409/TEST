@@ -174,7 +174,7 @@ st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_ht
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
-    "📂 Upload file PDF",
+    "📂 Chọn file PDF",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
@@ -314,13 +314,13 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Processed !!!")
+    st.success("🎉 HOÀN THÀNH !!!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
     if st.download_button(
-        "📥 DOWNLOAD FILE",
+        "📥 TẢI FILE",
         zip_data,
         file_name="THL PDF TO EXCEL.zip",
         mime="application/zip"
