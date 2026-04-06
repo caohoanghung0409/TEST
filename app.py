@@ -16,17 +16,17 @@ st.set_page_config(page_title="OCR Drive UI", layout="wide")
 # =========================
 # SESSION
 # =========================
+if "files_store" not in st.session_state:
+    st.session_state.files_store = []
+
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
 if "done" not in st.session_state:
     st.session_state.done = False
 
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
-
 # =========================
-# STYLE (CLEAN UI)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -36,13 +36,8 @@ footer {visibility: hidden;}
 
 .stApp { background: #f8fafc; }
 
-.block-container {
-    padding-top: 0.5rem !important;
-}
-
-/* HEADER */
 .header {
-    padding:10px 0;
+    padding:15px;
     font-size:20px;
     font-weight:600;
 }
@@ -50,25 +45,41 @@ footer {visibility: hidden;}
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 30px;
+    padding: 40px;
     border-radius: 16px;
     text-align: center;
     background: white;
+    cursor: pointer;
 }
 
-/* FILE ROW */
-.file-row {
-    font-size:14px;
-    margin-top:10px;
+[data-testid="stFileUploader"] small { display: none; }
+[data-testid="stFileUploader"] label { display: none; }
+
+[data-testid="stFileUploader"]::before {
+    content: "📤 Drag & Drop hoặc click để chọn PDF";
+    display: block;
+    font-size: 16px;
+    color: #334155;
 }
 
-.file-name {
-    font-weight:500;
+/* FILE ITEM */
+.file-item {
+    position: relative;
+    background:white;
+    padding:12px;
+    border-radius:10px;
+    margin-bottom:8px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.05);
 }
 
-.file-status {
-    color:#64748b;
-    font-size:13px;
+/* DELETE BTN */
+.delete-btn {
+    position:absolute;
+    top:6px;
+    right:10px;
+    color:red;
+    font-weight:bold;
+    cursor:pointer;
 }
 
 /* PROGRESS */
@@ -77,12 +88,19 @@ footer {visibility: hidden;}
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:4px;
+    margin-top:6px;
 }
 
 .progress-bar {
     height:100%;
-    background:linear-gradient(90deg,#0ea5e9,#22c55e);
+    background:#0ea5e9;
+}
+
+.stButton>button {
+    background:#0ea5e9;
+    color:white;
+    border-radius:8px;
+    font-weight:600;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -90,19 +108,35 @@ footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOADER
+# UPLOAD
 # =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
 
-uploaded_files = st.file_uploader(
-    "",
-    type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
-)
+# 👉 Lưu file vào store (tránh mất khi rerun)
+if uploaded_files:
+    for f in uploaded_files:
+        if f.name not in [x["name"] for x in st.session_state.files_store]:
+            st.session_state.files_store.append({
+                "name": f.name,
+                "file": f
+            })
+
+# =========================
+# FILE LIST + DELETE
+# =========================
+for i, f in enumerate(st.session_state.files_store):
+    col1, col2 = st.columns([10,1])
+
+    with col1:
+        st.markdown(f'<div class="file-item">📄 {f["name"]}</div>', unsafe_allow_html=True)
+
+    with col2:
+        if st.button("❌", key=f"del_{i}"):
+            st.session_state.files_store.pop(i)
+            st.rerun()
 
 # =========================
 # OCR
@@ -126,18 +160,17 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="file-row">
-    <div class="file-name">📄 {file.name}</div>
-    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
-    <div class="progress">
-        <div class="progress-bar" style="width:{percent}%"></div>
-    </div>
+<div class="file-item">
+📄 {file.name}<br>
+{i}/{total_pages} • {percent}%
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
 </div>
 """
         box.markdown(html, unsafe_allow_html=True)
         global_bar.progress(global_percent)
 
-        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -145,36 +178,38 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
+    box.markdown(f'<div class="file-item">📄 {file.name} ✅ DONE</div>', unsafe_allow_html=True)
     return results
 
 # =========================
 # MAIN
 # =========================
-if uploaded_files:
+if st.session_state.files_store:
 
     global_bar = st.progress(0)
+    boxes = [st.empty() for _ in st.session_state.files_store]
 
-    boxes = [st.empty() for _ in uploaded_files]
-
+    # 👉 PROCESS BUTTON (chỉ hiện 1 lần)
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
+    # 👉 PROCESSING
     if st.session_state.processing:
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(uploaded_files):
+            for i, f in enumerate(st.session_state.files_store):
 
-                data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
+                data = extract_pdf(f["file"], boxes[i], i, len(st.session_state.files_store), global_bar)
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    name = os.path.splitext(f.name)[0] + ".xlsx"
+                    name = os.path.splitext(f["name"])[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                         df.to_excel(tmp.name, index=False)
@@ -195,7 +230,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD + AUTO RELOAD
 # =========================
 if st.session_state.done:
 
@@ -212,6 +247,12 @@ if st.session_state.done:
     ):
         st.toast("✅ Download xong!", icon="🎉")
 
-        st.session_state.done = False
-        st.session_state.clear_uploader = not st.session_state.clear_uploader
-        st.rerun()
+        # 🔥 AUTO RELOAD CHẮC CHẮN
+        st.markdown("""
+        <meta http-equiv="refresh" content="2">
+        <script>
+        setTimeout(function(){
+            window.location.href = window.location.pathname;
+        }, 2000);
+        </script>
+        """, unsafe_allow_html=True)
