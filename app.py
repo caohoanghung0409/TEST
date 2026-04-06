@@ -35,6 +35,17 @@ header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
+/* 🔥 QUAN TRỌNG: kéo toàn bộ UI lên */
+.block-container {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+}
+
+/* giảm khoảng trắng trên cùng nữa */
+div[data-testid="stAppViewContainer"] > .main {
+    padding-top: 0rem;
+}
+
 .stApp { background: #f8fafc; }
 
 .header {
@@ -46,24 +57,15 @@ footer {visibility: hidden;}
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 20px;
+    padding: 25px;
     border-radius: 16px;
     background: white;
-}
-
-/* fake PDF icon */
-[data-testid="stFileUploader"] section div div::before {
-    content: "📄 PDF";
-    font-weight:600;
-    display:block;
-    margin-bottom:10px;
-    color:#ef4444;
 }
 
 /* FILE */
 .file-row {
     font-size:14px;
-    margin-top:6px;
+    margin-top:8px;
 }
 
 .file-name {
@@ -91,7 +93,7 @@ footer {visibility: hidden;}
 
 /* GLOBAL BAR */
 .global-wrap {
-    margin:5px 0 10px 0;
+    margin:10px 0;
 }
 
 .global-bar {
@@ -102,12 +104,14 @@ footer {visibility: hidden;}
     overflow:hidden;
 }
 
+/* dynamic fill */
 .global-fill {
     height:100%;
     border-radius:999px;
     transition: width 0.4s ease;
 }
 
+/* stripe animation */
 .global-fill::before {
     content:"";
     position:absolute;
@@ -128,6 +132,7 @@ footer {visibility: hidden;}
     to { background-position: 40px 0; }
 }
 
+/* TEXT */
 .global-text {
     position:absolute;
     width:100%;
@@ -139,11 +144,12 @@ footer {visibility: hidden;}
     color:#0f172a;
 }
 
+/* META INFO */
 .global-meta {
     display:flex;
     justify-content:space-between;
     font-size:12px;
-    margin-bottom:3px;
+    margin-bottom:5px;
     color:#475569;
 }
 </style>
@@ -153,11 +159,6 @@ footer {visibility: hidden;}
 # HEADER
 # =========================
 st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
-
-# =========================
-# GLOBAL BAR (ĐƯA LÊN TRÊN)
-# =========================
-global_box = st.empty()
 
 # =========================
 # UPLOADER
@@ -215,7 +216,7 @@ def render_global_bar(percent, speed, eta):
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
@@ -260,6 +261,7 @@ def extract_pdf(file, box, start_time, processed_pages, total_pages_all):
 # =========================
 if uploaded_files:
 
+    global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
@@ -284,7 +286,8 @@ if uploaded_files:
 
                 data = extract_pdf(
                     f, boxes[i],
-                    start_time, processed_pages, total_pages_all
+                    global_box, start_time,
+                    processed_pages, total_pages_all
                 )
 
                 if data:
