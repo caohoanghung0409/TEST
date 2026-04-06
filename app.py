@@ -10,43 +10,6 @@ import time
 from openpyxl import load_workbook
 
 # =========================
-# USER LOGIN
-# =========================
-USERS = {
-    "user1": "123",
-    "user2": "456"
-}
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "username" not in st.session_state:
-    st.session_state.username = ""
-
-# =========================
-# LOGIN UI
-# =========================
-if not st.session_state.logged_in:
-
-    st.set_page_config(page_title="Login", layout="centered")
-
-    st.markdown("## 🔐 Đăng nhập")
-
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if username in USERS and USERS[username] == password:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            st.success("✅ Login thành công")
-            st.rerun()
-        else:
-            st.error("❌ Sai tài khoản hoặc mật khẩu")
-
-    st.stop()
-
-# =========================
 # CONFIG
 # =========================
 st.set_page_config(page_title="OCR Drive UI", layout="wide")
@@ -75,9 +38,7 @@ footer {visibility: hidden;}
 .stApp { background: #f8fafc; }
 
 .header {
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
+    padding:10px 0;
     font-size:20px;
     font-weight:600;
 }
@@ -132,12 +93,14 @@ footer {visibility: hidden;}
     overflow:hidden;
 }
 
+/* dynamic fill */
 .global-fill {
     height:100%;
     border-radius:999px;
     transition: width 0.4s ease;
 }
 
+/* stripe animation */
 .global-fill::before {
     content:"";
     position:absolute;
@@ -158,6 +121,7 @@ footer {visibility: hidden;}
     to { background-position: 40px 0; }
 }
 
+/* TEXT */
 .global-text {
     position:absolute;
     width:100%;
@@ -169,6 +133,7 @@ footer {visibility: hidden;}
     color:#0f172a;
 }
 
+/* META INFO */
 .global-meta {
     display:flex;
     justify-content:space-between;
@@ -180,20 +145,9 @@ footer {visibility: hidden;}
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER + LOGOUT
+# HEADER
 # =========================
-col1, col2 = st.columns([6,1])
-
-with col1:
-    st.markdown(
-        f'<div class="header">📁 CHECK PDF TO EXCEL ( SM ) | 👤 {st.session_state.username}</div>',
-        unsafe_allow_html=True
-    )
-
-with col2:
-    if st.button("🚪 Logout"):
-        st.session_state.logged_in = False
-        st.rerun()
+st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -221,13 +175,13 @@ def process_page(img):
 # =========================
 def get_color(percent):
     if percent < 30:
-        return "#0ea5e9"
+        return "#0ea5e9"  # xanh dương
     elif percent < 70:
-        return "#f59e0b"
+        return "#f59e0b"  # vàng
     elif percent < 100:
-        return "#ef4444"
+        return "#ef4444"  # đỏ
     else:
-        return "#22c55e"
+        return "#22c55e"  # xanh lá
 
 # =========================
 # GLOBAL BAR RENDER
@@ -263,6 +217,7 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
         percent = int((i/total_pages)*100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
+        # speed + ETA
         elapsed = time.time() - start_time
         speed = processed_pages[0] / elapsed if elapsed > 0 else 0
         remaining = total_pages_all - processed_pages[0]
@@ -284,6 +239,7 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
 """
         box.markdown(html, unsafe_allow_html=True)
 
+        # crop
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -310,6 +266,7 @@ if uploaded_files:
 
         start_time = time.time()
 
+        # đếm tổng pages trước
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
             f.seek(0)
