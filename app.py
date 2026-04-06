@@ -310,7 +310,7 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xử lý xong!")
+    st.success("🎉 DONE !!!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
