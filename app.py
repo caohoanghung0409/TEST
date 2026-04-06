@@ -166,7 +166,7 @@ div.stButton > button:hover {
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">🚀 THL PDF → EXCEL PRO MAX</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
