@@ -10,7 +10,44 @@ import time
 from openpyxl import load_workbook
 
 # =========================
-# CONFIG
+# USER LOGIN
+# =========================
+USERS = {
+    "user1": "123",
+    "user2": "456"
+}
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+# =========================
+# LOGIN UI
+# =========================
+if not st.session_state.logged_in:
+
+    st.set_page_config(page_title="Login", layout="centered")
+
+    st.markdown("## 🔐 Đăng nhập")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if username in USERS and USERS[username] == password:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.success("✅ Login thành công")
+            st.rerun()
+        else:
+            st.error("❌ Sai tài khoản hoặc mật khẩu")
+
+    st.stop()
+
+# =========================
+# CONFIG APP
 # =========================
 st.set_page_config(page_title="OCR Drive UI", layout="wide")
 
@@ -27,7 +64,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE MAX PRO
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -38,41 +75,24 @@ footer {visibility: hidden;}
 .stApp { background: #f8fafc; }
 
 .header {
-    padding:10px 0;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
     font-size:20px;
     font-weight:600;
+    padding:10px 0;
 }
 
-/* UPLOADER */
-[data-testid="stFileUploader"] {
-    border: 2px dashed #cbd5f5;
-    padding: 30px;
-    border-radius: 16px;
-    background: white;
-}
-
-/* FILE */
 .file-row {
     font-size:14px;
     margin-top:10px;
 }
 
-.file-name {
-    font-weight:500;
-}
-
-.file-status {
-    color:#64748b;
-    font-size:13px;
-}
-
-/* FILE PROGRESS */
 .progress {
     height:6px;
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:4px;
 }
 
 .progress-bar {
@@ -81,10 +101,6 @@ footer {visibility: hidden;}
 }
 
 /* GLOBAL BAR */
-.global-wrap {
-    margin:15px 0;
-}
-
 .global-bar {
     position:relative;
     height:18px;
@@ -93,73 +109,40 @@ footer {visibility: hidden;}
     overflow:hidden;
 }
 
-/* dynamic fill */
 .global-fill {
     height:100%;
-    border-radius:999px;
-    transition: width 0.4s ease;
+    background:linear-gradient(90deg,#6366f1,#22c55e);
 }
 
-/* stripe animation */
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
-}
-
-/* TEXT */
 .global-text {
     position:absolute;
     width:100%;
     text-align:center;
     font-size:12px;
-    font-weight:600;
     top:0;
     line-height:18px;
-    color:#0f172a;
-}
-
-/* META INFO */
-.global-meta {
-    display:flex;
-    justify-content:space-between;
-    font-size:12px;
-    margin-bottom:5px;
-    color:#475569;
+    font-weight:600;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER
+# HEADER + LOGOUT
 # =========================
-st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+col1, col2 = st.columns([6,1])
+
+with col1:
+    st.markdown(f'<div class="header">📁 OCR TOOL | 👤 {st.session_state.username}</div>', unsafe_allow_html=True)
+
+with col2:
+    if st.button("🚪 Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
 
 # =========================
 # UPLOADER
 # =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
-
-uploaded_files = st.file_uploader(
-    "",
-    type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
-)
+uploaded_files = st.file_uploader("Upload PDF", type=["pdf"], accept_multiple_files=True)
 
 # =========================
 # OCR
@@ -171,81 +154,44 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# COLOR LOGIC
+# GLOBAL BAR
 # =========================
-def get_color(percent):
-    if percent < 30:
-        return "#0ea5e9"  # xanh dương
-    elif percent < 70:
-        return "#f59e0b"  # vàng
-    elif percent < 100:
-        return "#ef4444"  # đỏ
-    else:
-        return "#22c55e"  # xanh lá
-
-# =========================
-# GLOBAL BAR RENDER
-# =========================
-def render_global_bar(percent, speed, eta):
-    color = get_color(percent)
-
-    html = f"""
-<div class="global-wrap">
-    <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>🚀 {speed:.2f} pages/s • ⏳ ETA: {eta}s</div>
-    </div>
+def render_bar(p):
+    return f"""
+<div style="margin:10px 0;">
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:{color};"></div>
-        <div class="global-text">{percent}%</div>
+        <div class="global-fill" style="width:{p}%"></div>
+        <div class="global-text">{p}%</div>
     </div>
 </div>
 """
-    return html
 
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, total_pages_all):
+def extract(file, box, global_box, done, total):
     results = []
-    images = convert_from_bytes(file.read(), dpi=150)
-    total_pages = len(images)
+    imgs = convert_from_bytes(file.read(), dpi=150)
 
-    for i, img in enumerate(images, start=1):
-        processed_pages[0] += 1
+    for i, img in enumerate(imgs, 1):
+        done[0] += 1
+        percent = int((done[0] / total) * 100)
 
-        percent = int((i/total_pages)*100)
-        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+        global_box.markdown(render_bar(percent), unsafe_allow_html=True)
 
-        # speed + ETA
-        elapsed = time.time() - start_time
-        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
-        remaining = total_pages_all - processed_pages[0]
-        eta = int(remaining / speed) if speed > 0 else 0
-
-        global_box.markdown(
-            render_global_bar(global_percent, speed, eta),
-            unsafe_allow_html=True
-        )
-
-        html = f"""
+        box.markdown(f"""
 <div class="file-row">
-    <div class="file-name">📄 {file.name}</div>
-    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
-    <div class="progress">
-        <div class="progress-bar" style="width:{percent}%"></div>
-    </div>
+📄 {file.name} • Trang {i}/{len(imgs)}
+<div class="progress"><div class="progress-bar" style="width:{int(i/len(imgs)*100)}%"></div></div>
 </div>
-"""
-        box.markdown(html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-        # crop
-        w, h = img.size
-        img = img.crop((0, 0, w, int(h * 0.4)))
+        w,h = img.size
+        img = img.crop((0,0,w,int(h*0.4)))
 
-        sm, date = process_page(img)
+        sm,date = process_page(img)
         if sm and date:
-            results.append({"SM": sm, "Ngày": date})
+            results.append({"SM":sm,"Ngày":date})
 
     return results
 
@@ -254,43 +200,36 @@ def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, 
 # =========================
 if uploaded_files:
 
+    total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+    for f in uploaded_files:
+        f.seek(0)
+
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Process Files"):
+        if st.button("🚀 Process"):
             st.session_state.processing = True
             st.rerun()
 
     if st.session_state.processing:
 
-        start_time = time.time()
-
-        # đếm tổng pages trước
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
-        for f in uploaded_files:
-            f.seek(0)
-
-        processed_pages = [0]
-
+        done = [0]
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i, f in enumerate(uploaded_files):
+            for i,f in enumerate(uploaded_files):
 
-                data = extract_pdf(
-                    f, boxes[i], i, len(uploaded_files),
-                    global_box, start_time, processed_pages, total_pages_all
-                )
+                data = extract(f, boxes[i], global_box, done, total_pages)
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
+                    df.insert(0,"STT",range(1,len(df)+1))
 
-                    name = os.path.splitext(f.name)[0] + ".xlsx"
+                    name = os.path.splitext(f.name)+".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                        df.to_excel(tmp.name, index=False)
+                        df.to_excel(tmp.name,index=False)
 
                         wb = load_workbook(tmp.name)
                         ws = wb.active
@@ -300,7 +239,7 @@ if uploaded_files:
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
                         wb.save(tmp.name)
-                        zipf.write(tmp.name, name)
+                        zipf.write(tmp.name, os.path.basename(name))
 
         st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
@@ -312,19 +251,12 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xử lý xong!")
+    st.success("🎉 Xong!")
 
-    with open(st.session_state.zip, "rb") as f:
+    with open(st.session_state.zip,"rb") as f:
         zip_data = f.read()
 
-    if st.download_button(
-        "📥 Download ZIP",
-        zip_data,
-        file_name="ocr_results.zip",
-        mime="application/zip"
-    ):
-        st.toast("✅ Download xong!", icon="🎉")
-
+    if st.download_button("📥 Download ZIP", zip_data, "ocr_results.zip"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
