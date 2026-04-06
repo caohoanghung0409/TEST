@@ -7,7 +7,6 @@ import tempfile
 import zipfile
 import os
 from openpyxl import load_workbook
-from io import BytesIO  # ✅ thêm dòng này
 
 # =========================
 # CONFIG
@@ -37,13 +36,8 @@ footer {visibility: hidden;}
 
 .stApp { background: #f8fafc; }
 
-.block-container {
-    padding-top: 0.5rem !important;
-}
-
-/* HEADER */
 .header {
-    padding:10px 0;
+    padding:15px;
     font-size:20px;
     font-weight:600;
 }
@@ -51,38 +45,21 @@ footer {visibility: hidden;}
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 30px;
+    padding: 40px;
     border-radius: 16px;
     text-align: center;
     background: white;
+    cursor: pointer;
 }
 
-/* FILE ROW */
-.file-row {
-    margin-top:12px;
-}
+[data-testid="stFileUploader"] small { display: none; }
+[data-testid="stFileUploader"] label { display: none; }
 
-.file-name {
-    font-weight:500;
-}
-
-/* PDF ICON */
-.pdf-icon {
-    display:inline-block;
-    background:linear-gradient(135deg,#ef4444,#dc2626);
-    color:white;
-    font-size:11px;
-    font-weight:600;
-    padding:3px 6px;
-    border-radius:6px;
-    margin-right:6px;
-    letter-spacing:0.5px;
-}
-
-/* STATUS */
-.file-status {
-    font-size:13px;
-    color:#64748b;
+[data-testid="stFileUploader"]::before {
+    content: "📤 Drag & Drop hoặc click để chọn PDF";
+    display: block;
+    font-size: 16px;
+    color: #334155;
 }
 
 /* PROGRESS */
@@ -92,36 +69,11 @@ footer {visibility: hidden;}
     border-radius:10px;
     overflow:hidden;
     margin-top:6px;
-    position: relative;
 }
 
 .progress-bar {
     height:100%;
-    background:linear-gradient(90deg,#0ea5e9,#22c55e);
-    transition: width 0.3s ease;
-}
-
-/* SHIMMER */
-.progress-anim::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: -40%;
-    height: 100%;
-    width: 40%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255,255,255,0.6),
-        transparent
-    );
-    animation: shimmer 1.2s infinite;
-}
-
-@keyframes shimmer {
-    100% {
-        left: 120%;
-    }
+    background:#0ea5e9;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -129,10 +81,10 @@ footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">📁 CONVERT PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOADER
+# UPLOADER (GIỮ NGUYÊN)
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
@@ -148,8 +100,8 @@ uploaded_files = st.file_uploader(
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    sm = re.search(r"(SM\\d{4}\\.\\d{4})", text)
-    date = re.search(r"(\\d{2}/\\d{2}/\\d{4})", text)
+    sm = re.search(r"(SM\d{4}\.\d{4})", text)
+    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
@@ -165,14 +117,12 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div class="file-row">
-    <div class="file-name">
-        <span class="pdf-icon">PDF</span> {file.name}
-    </div>
-    <div class="file-status">Đang xử lý • Trang {i}/{total_pages} • {percent}%</div>
-    <div class="progress progress-anim">
-        <div class="progress-bar" style="width:{percent}%"></div>
-    </div>
+<div>
+📄 {file.name}<br>
+{i}/{total_pages} • {percent}%
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
 </div>
 """
         box.markdown(html, unsafe_allow_html=True)
@@ -185,18 +135,6 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    box.markdown(f"""
-<div class="file-row">
-    <div class="file-name">
-        <span class="pdf-icon">PDF</span> {file.name}
-    </div>
-    <div class="file-status">✅ Hoàn tất</div>
-    <div class="progress">
-        <div class="progress-bar" style="width:100%"></div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
     return results
 
 # =========================
@@ -205,7 +143,8 @@ def extract_pdf(file, box, idx, total, global_bar):
 if uploaded_files:
 
     global_bar = st.progress(0)
-    boxes = [st.empty() for _ in uploaded_files]
+    cols = st.columns(len(uploaded_files))
+    boxes = [cols[i].empty() for i in range(len(uploaded_files))]
 
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
@@ -214,9 +153,9 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        zip_buffer = BytesIO()  # ✅ FIX CHÍNH
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
             for i, f in enumerate(uploaded_files):
 
                 data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
@@ -238,33 +177,32 @@ if uploaded_files:
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
                         wb.save(tmp.name)
+                        zipf.write(tmp.name, name)
 
-                        # ✅ đọc file vào RAM rồi add vào zip
-                        with open(tmp.name, "rb") as f_excel:
-                            zipf.writestr(name, f_excel.read())
-
-        zip_buffer.seek(0)
-
-        st.session_state.zip_data = zip_buffer.getvalue()
+        st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD + RESET
 # =========================
 if st.session_state.done:
 
     st.success("🎉 Xử lý xong!")
 
+    with open(st.session_state.zip, "rb") as f:
+        zip_data = f.read()
+
     if st.download_button(
         "📥 Download ZIP",
-        st.session_state.zip_data,
+        zip_data,
         file_name="ocr_results.zip",
         mime="application/zip"
     ):
         st.toast("✅ Download xong!", icon="🎉")
 
+        # reset uploader (xóa file + reset UI)
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
