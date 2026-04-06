@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE
+# STYLE (CLEAN UI)
 # =========================
 st.markdown("""
 <style>
@@ -36,8 +36,13 @@ footer {visibility: hidden;}
 
 .stApp { background: #f8fafc; }
 
+.block-container {
+    padding-top: 0.5rem !important;
+}
+
+/* HEADER */
 .header {
-    padding:15px;
+    padding:10px 0;
     font-size:20px;
     font-weight:600;
 }
@@ -45,21 +50,25 @@ footer {visibility: hidden;}
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 40px;
+    padding: 30px;
     border-radius: 16px;
     text-align: center;
     background: white;
-    cursor: pointer;
 }
 
-[data-testid="stFileUploader"] small { display: none; }
-[data-testid="stFileUploader"] label { display: none; }
+/* FILE ROW */
+.file-row {
+    font-size:14px;
+    margin-top:10px;
+}
 
-[data-testid="stFileUploader"]::before {
-    content: "📤 Drag & Drop hoặc click để chọn PDF";
-    display: block;
-    font-size: 16px;
-    color: #334155;
+.file-name {
+    font-weight:500;
+}
+
+.file-status {
+    color:#64748b;
+    font-size:13px;
 }
 
 /* PROGRESS */
@@ -68,12 +77,12 @@ footer {visibility: hidden;}
     background:#e5e7eb;
     border-radius:10px;
     overflow:hidden;
-    margin-top:6px;
+    margin-top:4px;
 }
 
 .progress-bar {
     height:100%;
-    background:#0ea5e9;
+    background:linear-gradient(90deg,#0ea5e9,#22c55e);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -81,10 +90,10 @@ footer {visibility: hidden;}
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">📁 OCR Drive Tool</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOADER (GIỮ NGUYÊN)
+# UPLOADER
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
@@ -117,17 +126,18 @@ def extract_pdf(file, box, idx, total, global_bar):
         global_percent = int(((idx + i/total_pages)/total)*100)
 
         html = f"""
-<div>
-📄 {file.name}<br>
-{i}/{total_pages} • {percent}%
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
+<div class="file-row">
+    <div class="file-name">📄 {file.name}</div>
+    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
+    <div class="progress">
+        <div class="progress-bar" style="width:{percent}%"></div>
+    </div>
 </div>
 """
         box.markdown(html, unsafe_allow_html=True)
         global_bar.progress(global_percent)
 
+        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -143,8 +153,8 @@ def extract_pdf(file, box, idx, total, global_bar):
 if uploaded_files:
 
     global_bar = st.progress(0)
-    cols = st.columns(len(uploaded_files))
-    boxes = [cols[i].empty() for i in range(len(uploaded_files))]
+
+    boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Process Files"):
@@ -185,7 +195,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD + RESET
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
@@ -202,7 +212,6 @@ if st.session_state.done:
     ):
         st.toast("✅ Download xong!", icon="🎉")
 
-        # reset uploader (xóa file + reset UI)
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
