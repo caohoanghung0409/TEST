@@ -26,6 +26,10 @@ if "done" not in st.session_state:
 if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
+# 🔥 NEW: lưu danh sách file trước đó
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
+
 # =========================
 # STYLE PRO MAX
 # =========================
@@ -179,6 +183,16 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
     key=uploader_key
 )
+
+# =========================
+# 🔥 DETECT CHANGE FILE LIST
+# =========================
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
+    st.session_state.processing = False
+    st.session_state.done = False
+    st.session_state.last_uploaded_names = current_names
 
 # =========================
 # OCR
