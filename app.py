@@ -27,7 +27,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE MAX PRO (UPDATED)
+# STYLE MAX PRO
 # =========================
 st.markdown("""
 <style>
@@ -35,21 +35,10 @@ header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 🔥 QUAN TRỌNG: kéo toàn bộ UI lên */
-.block-container {
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
-}
-
-/* giảm khoảng trắng trên cùng nữa */
-div[data-testid="stAppViewContainer"] > .main {
-    padding-top: 0rem;
-}
-
 .stApp { background: #f8fafc; }
 
 .header {
-    padding:5px 0;
+    padding:10px 0;
     font-size:20px;
     font-weight:600;
 }
@@ -57,7 +46,7 @@ div[data-testid="stAppViewContainer"] > .main {
 /* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
-    padding: 25px;
+    padding: 30px;
     border-radius: 16px;
     background: white;
 }
@@ -65,7 +54,7 @@ div[data-testid="stAppViewContainer"] > .main {
 /* FILE */
 .file-row {
     font-size:14px;
-    margin-top:8px;
+    margin-top:10px;
 }
 
 .file-name {
@@ -93,7 +82,7 @@ div[data-testid="stAppViewContainer"] > .main {
 
 /* GLOBAL BAR */
 .global-wrap {
-    margin:10px 0;
+    margin:15px 0;
 }
 
 .global-bar {
@@ -186,13 +175,13 @@ def process_page(img):
 # =========================
 def get_color(percent):
     if percent < 30:
-        return "#0ea5e9"
+        return "#0ea5e9"  # xanh dương
     elif percent < 70:
-        return "#f59e0b"
+        return "#f59e0b"  # vàng
     elif percent < 100:
-        return "#ef4444"
+        return "#ef4444"  # đỏ
     else:
-        return "#22c55e"
+        return "#22c55e"  # xanh lá
 
 # =========================
 # GLOBAL BAR RENDER
@@ -200,7 +189,7 @@ def get_color(percent):
 def render_global_bar(percent, speed, eta):
     color = get_color(percent)
 
-    return f"""
+    html = f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
@@ -212,11 +201,12 @@ def render_global_bar(percent, speed, eta):
     </div>
 </div>
 """
+    return html
 
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, total_pages_all):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
@@ -227,6 +217,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         percent = int((i/total_pages)*100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
+        # speed + ETA
         elapsed = time.time() - start_time
         speed = processed_pages[0] / elapsed if elapsed > 0 else 0
         remaining = total_pages_all - processed_pages[0]
@@ -237,7 +228,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
             unsafe_allow_html=True
         )
 
-        box.markdown(f"""
+        html = f"""
 <div class="file-row">
     <div class="file-name">📄 {file.name}</div>
     <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
@@ -245,8 +236,10 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         <div class="progress-bar" style="width:{percent}%"></div>
     </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+        box.markdown(html, unsafe_allow_html=True)
 
+        # crop
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -273,6 +266,7 @@ if uploaded_files:
 
         start_time = time.time()
 
+        # đếm tổng pages trước
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
             f.seek(0)
@@ -285,9 +279,8 @@ if uploaded_files:
             for i, f in enumerate(uploaded_files):
 
                 data = extract_pdf(
-                    f, boxes[i],
-                    global_box, start_time,
-                    processed_pages, total_pages_all
+                    f, boxes[i], i, len(uploaded_files),
+                    global_box, start_time, processed_pages, total_pages_all
                 )
 
                 if data:
