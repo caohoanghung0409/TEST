@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE
+# STYLE PRO
 # =========================
 st.markdown("""
 <style>
@@ -46,6 +46,7 @@ footer {visibility: hidden;}
     font-weight:600;
 }
 
+/* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
     padding: 30px;
@@ -54,6 +55,7 @@ footer {visibility: hidden;}
     background: white;
 }
 
+/* FILE */
 .file-row {
     font-size:14px;
     margin-top:10px;
@@ -68,6 +70,7 @@ footer {visibility: hidden;}
     font-size:13px;
 }
 
+/* FILE PROGRESS */
 .progress {
     height:6px;
     background:#e5e7eb;
@@ -81,11 +84,54 @@ footer {visibility: hidden;}
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
 }
 
-/* GLOBAL TEXT */
+/* GLOBAL PRO BAR */
+.global-wrap {
+    margin-top:10px;
+    margin-bottom:20px;
+}
+
+.global-bar {
+    position:relative;
+    height:14px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+}
+
+.global-fill {
+    height:100%;
+    background:linear-gradient(90deg,#0ea5e9,#22c55e);
+    border-radius:999px;
+    transition: width 0.3s ease;
+}
+
+/* shimmer effect */
+.global-fill::after {
+    content:'';
+    position:absolute;
+    top:0;
+    left:-40%;
+    width:40%;
+    height:100%;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,0.5),transparent);
+    animation:shine 1.5s infinite;
+}
+
+@keyframes shine {
+    100% { left:140%; }
+}
+
+/* TEXT INSIDE BAR */
 .global-text {
-    font-size:14px;
-    margin-bottom:6px;
-    font-weight:500;
+    position:absolute;
+    width:100%;
+    text-align:center;
+    top:0;
+    left:0;
+    font-size:12px;
+    font-weight:600;
+    line-height:14px;
+    color:#0f172a;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -117,9 +163,23 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
+# GLOBAL BAR RENDER
+# =========================
+def render_global_bar(percent):
+    html = f"""
+<div class="global-wrap">
+    <div class="global-bar">
+        <div class="global-fill" style="width:{percent}%"></div>
+        <div class="global-text">⚡ {percent}%</div>
+    </div>
+</div>
+"""
+    return html
+
+# =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, idx, total, global_bar, global_text):
+def extract_pdf(file, box, idx, total, global_box):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
@@ -128,12 +188,8 @@ def extract_pdf(file, box, idx, total, global_bar, global_text):
         percent = int((i/total_pages)*100)
         global_percent = int(((idx + i/total_pages)/total)*100)
 
-        # 👉 UPDATE GLOBAL %
-        global_text.markdown(
-            f'<div class="global-text">⚡ Đang xử lý tổng: {global_percent}%</div>',
-            unsafe_allow_html=True
-        )
-        global_bar.progress(global_percent)
+        # 👉 GLOBAL PRO BAR
+        global_box.markdown(render_global_bar(global_percent), unsafe_allow_html=True)
 
         html = f"""
 <div class="file-row">
@@ -161,10 +217,7 @@ def extract_pdf(file, box, idx, total, global_bar, global_text):
 # =========================
 if uploaded_files:
 
-    # 👉 TEXT + BAR
-    global_text = st.empty()
-    global_bar = st.progress(0)
-
+    global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
@@ -181,7 +234,7 @@ if uploaded_files:
 
                 data = extract_pdf(
                     f, boxes[i], i, len(uploaded_files),
-                    global_bar, global_text
+                    global_box
                 )
 
                 if data:
