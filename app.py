@@ -7,6 +7,7 @@ import tempfile
 import zipfile
 import os
 from openpyxl import load_workbook
+from io import BytesIO  # ✅ thêm dòng này
 
 # =========================
 # CONFIG
@@ -184,7 +185,6 @@ def extract_pdf(file, box, idx, total, global_bar):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    # DONE
     box.markdown(f"""
 <div class="file-row">
     <div class="file-name">
@@ -214,9 +214,9 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        zip_buffer = BytesIO()  # ✅ FIX CHÍNH
 
-        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
             for i, f in enumerate(uploaded_files):
 
                 data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
@@ -238,9 +238,14 @@ if uploaded_files:
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
                         wb.save(tmp.name)
-                        zipf.write(tmp.name, name)
 
-        st.session_state.zip = zip_buffer.name
+                        # ✅ đọc file vào RAM rồi add vào zip
+                        with open(tmp.name, "rb") as f_excel:
+                            zipf.writestr(name, f_excel.read())
+
+        zip_buffer.seek(0)
+
+        st.session_state.zip_data = zip_buffer.getvalue()
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
@@ -252,12 +257,9 @@ if st.session_state.done:
 
     st.success("🎉 Xử lý xong!")
 
-    with open(st.session_state.zip, "rb") as f:
-        zip_data = f.read()
-
     if st.download_button(
         "📥 Download ZIP",
-        zip_data,
+        st.session_state.zip_data,
         file_name="ocr_results.zip",
         mime="application/zip"
     ):
