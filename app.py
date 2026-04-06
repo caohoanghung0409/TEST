@@ -27,87 +27,85 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE MAX PRO (FIX UI)
+# STYLE PRO MAX
 # =========================
 st.markdown("""
 <style>
-header {visibility: hidden;}
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-
-/* 🔥 KÉO NỘI DUNG LÊN TRÊN */
-.block-container {
-    padding-top: 0.5rem !important;
-}
-
-/* nền */
-.stApp { background: #f8fafc; }
+header, #MainMenu, footer {visibility: hidden;}
+.block-container {padding-top: 0.5rem !important;}
+.stApp { background: #f1f5f9; }
 
 /* header */
 .header {
-    padding:5px 0;
-    font-size:20px;
-    font-weight:600;
+    font-size:22px;
+    font-weight:700;
+    margin-bottom:10px;
 }
 
 /* uploader */
 [data-testid="stFileUploader"] {
-    border: 2px dashed #cbd5f5;
-    padding: 20px;
-    border-radius: 16px;
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
-/* 🔥 FIX KHOẢNG CÁCH NÚT */
+/* button PRO */
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+    font-size:15px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:0 8px 20px rgba(0,0,0,0.2);
+}
+
+/* spacing */
 .process-btn {
     margin-top: 25px;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
-/* button đẹp hơn */
-div.stButton > button {
-    border-radius: 10px;
-    padding: 10px 20px;
-    font-weight: 600;
-}
-
-/* file */
+/* file row */
 .file-row {
-    font-size:14px;
-    margin-top:10px;
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
-.file-name {
-    font-weight:500;
-}
-
-.file-status {
-    color:#64748b;
-    font-size:13px;
-}
-
-/* progress file */
+/* progress */
 .progress {
-    height:6px;
+    height:8px;
     background:#e5e7eb;
-    border-radius:10px;
+    border-radius:999px;
     overflow:hidden;
-    margin-top:4px;
+    margin-top:6px;
 }
-
 .progress-bar {
     height:100%;
-    background:linear-gradient(90deg,#0ea5e9,#22c55e);
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    transition: width 0.3s ease;
 }
 
 /* global */
-.global-wrap {
-    margin:10px 0;
-}
+.global-wrap { margin:15px 0; }
 
 .global-bar {
     position:relative;
-    height:18px;
+    height:20px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
@@ -144,18 +142,23 @@ div.stButton > button {
     width:100%;
     text-align:center;
     font-size:12px;
-    font-weight:600;
+    font-weight:700;
     top:0;
-    line-height:18px;
-    color:#0f172a;
+    line-height:20px;
 }
 
 .global-meta {
     display:flex;
     justify-content:space-between;
-    font-size:12px;
-    margin-bottom:5px;
+    font-size:13px;
+    margin-bottom:6px;
+}
+
+/* loading text */
+.loading {
+    font-size:14px;
     color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -163,7 +166,7 @@ div.stButton > button {
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">📁 CONVERT PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL PRO MAX</div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -171,7 +174,7 @@ st.markdown('<div class="header">📁 CONVERT PDF TO EXCEL ( SM ) </div>', unsaf
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
-    "",
+    "📂 Kéo thả hoặc chọn file PDF",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
@@ -187,32 +190,17 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# COLOR
-# =========================
-def get_color(percent):
-    if percent < 30:
-        return "#0ea5e9"
-    elif percent < 70:
-        return "#f59e0b"
-    elif percent < 100:
-        return "#ef4444"
-    else:
-        return "#22c55e"
-
-# =========================
 # GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
-    color = get_color(percent)
-
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>🚀 {speed:.2f} pages/s • ⏳ ETA: {eta}s</div>
+        <div>🚀 {speed:.2f} pages/s • ⏳ {eta}s</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:{color};"></div>
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
@@ -237,15 +225,11 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(
-            render_global_bar(global_percent, speed, eta),
-            unsafe_allow_html=True
-        )
+        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
-    <div class="file-name">📄 {file.name}</div>
-    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
+    📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
     <div class="progress">
         <div class="progress-bar" style="width:{percent}%"></div>
     </div>
@@ -271,16 +255,17 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        # 🔥 FIX KHOẢNG CÁCH NÚT
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
 
-        if st.button("🚀 Process Files"):
+        if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
+
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -329,13 +314,13 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 DONE !!!")
+    st.success("🎉 Xử lý xong!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
     if st.download_button(
-        "📥 Download ZIP",
+        "📥 Tải file ZIP",
         zip_data,
         file_name="THL PDF TO EXCEL.zip",
         mime="application/zip"
