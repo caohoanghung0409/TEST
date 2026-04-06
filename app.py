@@ -26,7 +26,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE (CLEAN UI)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -40,14 +40,12 @@ footer {visibility: hidden;}
     padding-top: 0.5rem !important;
 }
 
-/* HEADER */
 .header {
     padding:10px 0;
     font-size:20px;
     font-weight:600;
 }
 
-/* UPLOADER */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
     padding: 30px;
@@ -56,7 +54,6 @@ footer {visibility: hidden;}
     background: white;
 }
 
-/* FILE ROW */
 .file-row {
     font-size:14px;
     margin-top:10px;
@@ -71,7 +68,6 @@ footer {visibility: hidden;}
     font-size:13px;
 }
 
-/* PROGRESS */
 .progress {
     height:6px;
     background:#e5e7eb;
@@ -83,6 +79,13 @@ footer {visibility: hidden;}
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
+}
+
+/* GLOBAL TEXT */
+.global-text {
+    font-size:14px;
+    margin-bottom:6px;
+    font-weight:500;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -116,7 +119,7 @@ def process_page(img):
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, idx, total, global_bar):
+def extract_pdf(file, box, idx, total, global_bar, global_text):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
@@ -124,6 +127,13 @@ def extract_pdf(file, box, idx, total, global_bar):
     for i, img in enumerate(images, start=1):
         percent = int((i/total_pages)*100)
         global_percent = int(((idx + i/total_pages)/total)*100)
+
+        # 👉 UPDATE GLOBAL %
+        global_text.markdown(
+            f'<div class="global-text">⚡ Đang xử lý tổng: {global_percent}%</div>',
+            unsafe_allow_html=True
+        )
+        global_bar.progress(global_percent)
 
         html = f"""
 <div class="file-row">
@@ -135,7 +145,6 @@ def extract_pdf(file, box, idx, total, global_bar):
 </div>
 """
         box.markdown(html, unsafe_allow_html=True)
-        global_bar.progress(global_percent)
 
         # crop top
         w, h = img.size
@@ -152,6 +161,8 @@ def extract_pdf(file, box, idx, total, global_bar):
 # =========================
 if uploaded_files:
 
+    # 👉 TEXT + BAR
+    global_text = st.empty()
     global_bar = st.progress(0)
 
     boxes = [st.empty() for _ in uploaded_files]
@@ -168,7 +179,10 @@ if uploaded_files:
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
             for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(f, boxes[i], i, len(uploaded_files), global_bar)
+                data = extract_pdf(
+                    f, boxes[i], i, len(uploaded_files),
+                    global_bar, global_text
+                )
 
                 if data:
                     df = pd.DataFrame(data)
