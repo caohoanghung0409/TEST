@@ -314,13 +314,13 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xử lý xong !!!")
+    st.success("🎉 Processed !!!")
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
     if st.download_button(
-        "📥 Tải file ZIP",
+        "📥 DOWNLOAD FILE",
         zip_data,
         file_name="THL PDF TO EXCEL.zip",
         mime="application/zip"
