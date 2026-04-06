@@ -12,81 +12,96 @@ from openpyxl import load_workbook
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR Ultimate UI", layout="wide")
+st.set_page_config(page_title="OCR Drive UI", layout="wide")
 
 # =========================
 # SESSION
 # =========================
-for key, default in {
-    "processing": False,
-    "done": False,
-    "clear_uploader": False
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
+if "done" not in st.session_state:
+    st.session_state.done = False
+
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
 
 # =========================
-# DARK MODE DETECT
+# STYLE MAX PRO
 # =========================
-is_dark = st.get_option("theme.base") == "dark"
-
-# =========================
-# STYLE ULTIMATE
-# =========================
-st.markdown(f"""
+st.markdown("""
 <style>
-header, #MainMenu, footer {{visibility:hidden;}}
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 
-.stApp {{
-    background: {"#0f172a" if is_dark else "#f8fafc"};
-    color: {"#e2e8f0" if is_dark else "#0f172a"};
-}}
+.stApp { background: #f8fafc; }
 
-.header {{
-    font-size:22px;
-    font-weight:700;
+.header {
     padding:10px 0;
-}}
+    font-size:20px;
+    font-weight:600;
+}
 
-[data-testid="stFileUploader"] {{
-    border: 2px dashed #6366f1;
-    padding: 40px;
-    border-radius: 20px;
-    background: {"#1e293b" if is_dark else "white"};
-    text-align:center;
-}}
+/* UPLOADER */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #cbd5f5;
+    padding: 30px;
+    border-radius: 16px;
+    background: white;
+}
 
-.stats {{
-    display:flex;
-    gap:20px;
-    margin:10px 0;
-}}
-
-.card {{
-    flex:1;
-    padding:12px;
-    border-radius:12px;
-    background: {"#1e293b" if is_dark else "white"};
-    box-shadow:0 4px 10px rgba(0,0,0,0.05);
-    text-align:center;
+/* FILE */
+.file-row {
     font-size:14px;
-}}
+    margin-top:10px;
+}
 
-.global-bar {{
+.file-name {
+    font-weight:500;
+}
+
+.file-status {
+    color:#64748b;
+    font-size:13px;
+}
+
+/* FILE PROGRESS */
+.progress {
+    height:6px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:4px;
+}
+
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#0ea5e9,#22c55e);
+}
+
+/* GLOBAL BAR */
+.global-wrap {
+    margin:15px 0;
+}
+
+.global-bar {
     position:relative;
-    height:20px;
+    height:18px;
+    background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
-    background:#334155;
-}}
+}
 
-.global-fill {{
+/* dynamic fill */
+.global-fill {
     height:100%;
-    transition:width .4s;
-    background:linear-gradient(90deg,#6366f1,#22c55e);
-}}
+    border-radius:999px;
+    transition: width 0.4s ease;
+}
 
-.global-fill::before {{
+/* stripe animation */
+.global-fill::before {
     content:"";
     position:absolute;
     width:100%;
@@ -99,46 +114,40 @@ header, #MainMenu, footer {{visibility:hidden;}}
         transparent 20px
     );
     animation: move 1s linear infinite;
-}}
+}
 
-@keyframes move {{
-    from {{background-position:0 0;}}
-    to {{background-position:40px 0;}}
-}}
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
 
-.global-text {{
+/* TEXT */
+.global-text {
     position:absolute;
     width:100%;
     text-align:center;
-    top:0;
     font-size:12px;
-    line-height:20px;
     font-weight:600;
-}}
+    top:0;
+    line-height:18px;
+    color:#0f172a;
+}
 
-.file-row {{
-    margin-top:10px;
-    font-size:14px;
-}}
-
-.progress {{
-    height:6px;
-    background:#334155;
-    border-radius:10px;
-    overflow:hidden;
-}}
-
-.progress-bar {{
-    height:100%;
-    background:linear-gradient(90deg,#0ea5e9,#22c55e);
-}}
+/* META INFO */
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    margin-bottom:5px;
+    color:#475569;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">🚀 OCR PDF → Excel ULTIMATE</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📁 CHECK PDF TO EXCEL ( SM ) </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -146,7 +155,7 @@ st.markdown('<div class="header">🚀 OCR PDF → Excel ULTIMATE</div>', unsafe_
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
-    "📂 Kéo thả file PDF vào đây",
+    "",
     type=["pdf"],
     accept_multiple_files=True,
     key=uploader_key
@@ -162,52 +171,81 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# RENDER BAR
+# COLOR LOGIC
 # =========================
-def render_bar(p, speed, eta):
-    return f"""
-<div style="margin:10px 0;">
-    <div style="display:flex;justify-content:space-between;font-size:12px;">
-        <div>⚡ {p}%</div>
-        <div>🚀 {speed:.2f} p/s • ⏳ {eta}s</div>
+def get_color(percent):
+    if percent < 30:
+        return "#0ea5e9"  # xanh dương
+    elif percent < 70:
+        return "#f59e0b"  # vàng
+    elif percent < 100:
+        return "#ef4444"  # đỏ
+    else:
+        return "#22c55e"  # xanh lá
+
+# =========================
+# GLOBAL BAR RENDER
+# =========================
+def render_global_bar(percent, speed, eta):
+    color = get_color(percent)
+
+    html = f"""
+<div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>🚀 {speed:.2f} pages/s • ⏳ ETA: {eta}s</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{p}%"></div>
-        <div class="global-text">{p}%</div>
+        <div class="global-fill" style="width:{percent}%; background:{color};"></div>
+        <div class="global-text">{percent}%</div>
     </div>
 </div>
 """
+    return html
 
 # =========================
 # PROCESS
 # =========================
-def extract(file, box, global_box, start, done_pages, total_pages):
+def extract_pdf(file, box, idx, total, global_box, start_time, processed_pages, total_pages_all):
     results = []
-    imgs = convert_from_bytes(file.read(), dpi=150)
+    images = convert_from_bytes(file.read(), dpi=150)
+    total_pages = len(images)
 
-    for i, img in enumerate(imgs, 1):
-        done_pages[0] += 1
+    for i, img in enumerate(images, start=1):
+        processed_pages[0] += 1
 
-        percent = int((done_pages[0] / total_pages) * 100)
-        elapsed = time.time() - start
-        speed = done_pages[0]/elapsed if elapsed>0 else 0
-        eta = int((total_pages - done_pages[0]) / speed) if speed>0 else 0
+        percent = int((i/total_pages)*100)
+        global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
-        global_box.markdown(render_bar(percent, speed, eta), unsafe_allow_html=True)
+        # speed + ETA
+        elapsed = time.time() - start_time
+        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
+        remaining = total_pages_all - processed_pages[0]
+        eta = int(remaining / speed) if speed > 0 else 0
 
-        box.markdown(f"""
+        global_box.markdown(
+            render_global_bar(global_percent, speed, eta),
+            unsafe_allow_html=True
+        )
+
+        html = f"""
 <div class="file-row">
-📄 {file.name} • Trang {i}/{len(imgs)}
-<div class="progress"><div class="progress-bar" style="width:{int(i/len(imgs)*100)}%"></div></div>
+    <div class="file-name">📄 {file.name}</div>
+    <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
+    <div class="progress">
+        <div class="progress-bar" style="width:{percent}%"></div>
+    </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+        box.markdown(html, unsafe_allow_html=True)
 
-        w,h = img.size
-        img = img.crop((0,0,w,int(h*0.4)))
+        # crop
+        w, h = img.size
+        img = img.crop((0, 0, w, int(h * 0.4)))
 
-        sm,date = process_page(img)
+        sm, date = process_page(img)
         if sm and date:
-            results.append({"SM":sm,"Ngày":date})
+            results.append({"SM": sm, "Ngày": date})
 
     return results
 
@@ -216,45 +254,43 @@ def extract(file, box, global_box, start, done_pages, total_pages):
 # =========================
 if uploaded_files:
 
-    total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
-    for f in uploaded_files:
-        f.seek(0)
-
-    st.markdown(f"""
-<div class="stats">
-<div class="card">📄 Files<br><b>{len(uploaded_files)}</b></div>
-<div class="card">📑 Pages<br><b>{total_pages}</b></div>
-</div>
-""", unsafe_allow_html=True)
-
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Bắt đầu xử lý"):
+        if st.button("🚀 Process Files"):
             st.session_state.processing = True
             st.rerun()
 
     if st.session_state.processing:
 
-        start = time.time()
-        done_pages = [0]
+        start_time = time.time()
+
+        # đếm tổng pages trước
+        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+        for f in uploaded_files:
+            f.seek(0)
+
+        processed_pages = [0]
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
         with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for i,f in enumerate(uploaded_files):
+            for i, f in enumerate(uploaded_files):
 
-                data = extract(f, boxes[i], global_box, start, done_pages, total_pages)
+                data = extract_pdf(
+                    f, boxes[i], i, len(uploaded_files),
+                    global_box, start_time, processed_pages, total_pages_all
+                )
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0,"STT",range(1,len(df)+1))
+                    df.insert(0, "STT", range(1, len(df)+1))
 
-                    name = os.path.splitext(f.name)[0]+".xlsx"
+                    name = os.path.splitext(f.name)[0] + ".xlsx"
 
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                        df.to_excel(tmp.name,index=False)
+                        df.to_excel(tmp.name, index=False)
 
                         wb = load_workbook(tmp.name)
                         ws = wb.active
@@ -264,7 +300,7 @@ if uploaded_files:
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
                         wb.save(tmp.name)
-                        zipf.write(tmp.name,name)
+                        zipf.write(tmp.name, name)
 
         st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
@@ -272,23 +308,23 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DONE
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 Xong rồi!")
+    st.success("🎉 Xử lý xong!")
 
-    # 🔔 SOUND
-    st.markdown("""
-    <audio autoplay>
-    <source src="https://www.soundjay.com/buttons/sounds/button-3.mp3" type="audio/mp3">
-    </audio>
-    """, unsafe_allow_html=True)
-
-    with open(st.session_state.zip,"rb") as f:
+    with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
-    if st.download_button("📥 Download ZIP", zip_data, "ocr_results.zip"):
+    if st.download_button(
+        "📥 Download ZIP",
+        zip_data,
+        file_name="ocr_results.zip",
+        mime="application/zip"
+    ):
+        st.toast("✅ Download xong!", icon="🎉")
+
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
