@@ -8,13 +8,11 @@ import zipfile
 import os
 import time
 from openpyxl import load_workbook
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="OCR Drive UI", layout="wide")
+st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
 # SESSION
@@ -29,7 +27,7 @@ if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
 
 # =========================
-# STYLE
+# STYLE MAX PRO (FIX UI)
 # =========================
 st.markdown("""
 <style>
@@ -37,12 +35,22 @@ header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-.block-container { padding-top: 0.5rem !important; }
+/* 🔥 KÉO NỘI DUNG LÊN TRÊN */
+.block-container {
+    padding-top: 0.5rem !important;
+}
 
+/* nền */
 .stApp { background: #f8fafc; }
 
-.header { padding:5px 0; font-size:20px; font-weight:600; }
+/* header */
+.header {
+    padding:5px 0;
+    font-size:20px;
+    font-weight:600;
+}
 
+/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #cbd5f5;
     padding: 20px;
@@ -50,10 +58,22 @@ footer {visibility: hidden;}
     background: white;
 }
 
-.file-row { font-size:14px; margin-top:10px; }
-.file-name { font-weight:500; }
-.file-status { color:#64748b; font-size:13px; }
+/* file */
+.file-row {
+    font-size:14px;
+    margin-top:10px;
+}
 
+.file-name {
+    font-weight:500;
+}
+
+.file-status {
+    color:#64748b;
+    font-size:13px;
+}
+
+/* progress file */
 .progress {
     height:6px;
     background:#e5e7eb;
@@ -67,7 +87,10 @@ footer {visibility: hidden;}
     background:linear-gradient(90deg,#0ea5e9,#22c55e);
 }
 
-.global-wrap { margin:10px 0; }
+/* global */
+.global-wrap {
+    margin:10px 0;
+}
 
 .global-bar {
     position:relative;
@@ -83,6 +106,26 @@ footer {visibility: hidden;}
     transition: width 0.4s ease;
 }
 
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
+
 .global-text {
     position:absolute;
     width:100%;
@@ -91,6 +134,7 @@ footer {visibility: hidden;}
     font-weight:600;
     top:0;
     line-height:18px;
+    color:#0f172a;
 }
 
 .global-meta {
@@ -98,6 +142,7 @@ footer {visibility: hidden;}
     justify-content:space-between;
     font-size:12px;
     margin-bottom:5px;
+    color:#475569;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -129,9 +174,24 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
+# COLOR
+# =========================
+def get_color(percent):
+    if percent < 30:
+        return "#0ea5e9"
+    elif percent < 70:
+        return "#f59e0b"
+    elif percent < 100:
+        return "#ef4444"
+    else:
+        return "#22c55e"
+
+# =========================
 # GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
+    color = get_color(percent)
+
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
@@ -139,35 +199,25 @@ def render_global_bar(percent, speed, eta):
         <div>🚀 {speed:.2f} pages/s • ⏳ ETA: {eta}s</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:#22c55e;"></div>
+        <div class="global-fill" style="width:{percent}%; background:{color};"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
 """
 
 # =========================
-# LOCK (tránh lỗi race condition)
+# PROCESS PDF
 # =========================
-lock = threading.Lock()
-
-# =========================
-# PROCESS 1 FILE
-# =========================
-def process_file(f, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
-
-    images = convert_from_bytes(f.read(), dpi=150)
+    images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-
-        with lock:
-            processed_pages[0] += 1
+        processed_pages[0] += 1
 
         percent = int((i/total_pages)*100)
-
-        with lock:
-            global_percent = int((processed_pages[0] / total_pages_all) * 100)
+        global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
         elapsed = time.time() - start_time
         speed = processed_pages[0] / elapsed if elapsed > 0 else 0
@@ -181,7 +231,7 @@ def process_file(f, box, global_box, start_time, processed_pages, total_pages_al
 
         box.markdown(f"""
 <div class="file-row">
-    <div class="file-name">📄 {f.name}</div>
+    <div class="file-name">📄 {file.name}</div>
     <div class="file-status">Trang {i}/{total_pages} • {percent}%</div>
     <div class="progress">
         <div class="progress-bar" style="width:{percent}%"></div>
@@ -196,7 +246,7 @@ def process_file(f, box, global_box, start_time, processed_pages, total_pages_al
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
-    return f.name, results
+    return results
 
 # =========================
 # MAIN
@@ -223,27 +273,13 @@ if uploaded_files:
 
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
-        results_all = {}
+        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
+            for i, f in enumerate(uploaded_files):
 
-        # 🚀 MULTI THREAD
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [
-                executor.submit(
-                    process_file,
+                data = extract_pdf(
                     f, boxes[i], global_box,
                     start_time, processed_pages, total_pages_all
                 )
-                for i, f in enumerate(uploaded_files)
-            ]
-
-            for future in as_completed(futures):
-                name, data = future.result()
-                results_all[name] = data
-
-        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
-            for f in uploaded_files:
-
-                data = results_all.get(f.name, [])
 
                 if data:
                     df = pd.DataFrame(data)
@@ -282,7 +318,7 @@ if st.session_state.done:
     if st.download_button(
         "📥 Download ZIP",
         zip_data,
-        file_name="ocr_results.zip",
+        file_name="THL PDF TO EXCEL.zip",
         mime="application/zip"
     ):
         st.toast("✅ Download xong!", icon="🎉")
