@@ -4,7 +4,6 @@ from pdf2image import convert_from_bytes
 import pandas as pd
 import re
 import tempfile
-import zipfile
 import os
 import time
 import base64
@@ -34,7 +33,7 @@ if "excel" not in st.session_state:
     st.session_state.excel = None
 
 # =========================
-# STYLE (FULL PRO UI)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -53,10 +52,6 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -66,25 +61,19 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.15);
 }
 
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
-.process-btn {
-    margin-top: 25px;
-    margin-bottom: 15px;
-}
+.process-btn {margin-top:25px;margin-bottom:15px;}
 
 .file-row {
     margin-top:12px;
     padding:10px;
     border-radius:12px;
     background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
 .progress {
@@ -97,7 +86,6 @@ div.stButton > button {
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
 }
 
 .global-wrap { margin:15px 0; }
@@ -113,27 +101,6 @@ div.stButton > button {
 .global-fill {
     height:100%;
     border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -195,7 +162,7 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# GLOBAL BAR (FULL)
+# GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
     return f"""
@@ -292,7 +259,6 @@ if uploaded_files:
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # ✅ AUTO WIDTH ALL SHEETS
         wb = load_workbook(excel_file.name)
         for ws in wb.worksheets:
             for col in ws.columns:
@@ -306,7 +272,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (FIX TÊN FILE)
 # =========================
 if st.session_state.done:
 
@@ -317,8 +283,14 @@ if st.session_state.done:
 
     b64 = base64.b64encode(data).decode()
 
+    # ✅ FIX TÊN FILE
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    <a download="THL_PDF_TO_EXCEL.xlsx"
+       href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}">
+    </a>
+    <script>
+        document.querySelector('a').click();
+    </script>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
