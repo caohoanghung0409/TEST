@@ -195,7 +195,7 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# GLOBAL BAR (FULL)
+# GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
     return f"""
@@ -259,7 +259,6 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
@@ -292,7 +291,6 @@ if uploaded_files:
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # ✅ AUTO WIDTH ALL SHEETS
         wb = load_workbook(excel_file.name)
         for ws in wb.worksheets:
             for col in ws.columns:
@@ -306,7 +304,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (CHỈ CHỈNH PHẦN NÀY)
 # =========================
 if st.session_state.done:
 
@@ -315,11 +313,12 @@ if st.session_state.done:
     with open(st.session_state.excel, "rb") as f:
         data = f.read()
 
-    b64 = base64.b64encode(data).decode()
-
-    st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
-    """, unsafe_allow_html=True)
+    st.download_button(
+        label="📥 Tải file Excel",
+        data=data,
+        file_name="TPN_PDF_TO_EXCEL.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
