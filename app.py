@@ -34,7 +34,7 @@ if "zip" not in st.session_state:
     st.session_state.zip = None
 
 # =========================
-# STYLE PRO MAX
+# STYLE PRO MAX + NEW
 # =========================
 st.markdown("""
 <style>
@@ -81,6 +81,26 @@ div.stButton > button:hover {
 /* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+/* full width button */
+.full-btn button {
+    width:100% !important;
+    height:55px;
+    font-size:16px;
+}
+
+/* center success */
+.center-success {
+    display:flex;
+    justify-content:center;
+}
+
+.center-success div[data-testid="stAlert"] {
+    width:100%;
+    text-align:center;
+    font-size:20px;
+    font-weight:700;
 }
 
 /* spacing */
@@ -330,24 +350,26 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO ONLY - FIX ĐÚNG)
+# DOWNLOAD AUTO + UI FIX
 # =========================
 if st.session_state.done:
 
+    st.markdown('<div class="center-success">', unsafe_allow_html=True)
     st.success("🎉 HOÀN THÀNH !!!")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
     b64 = base64.b64encode(zip_data).decode()
 
-    # ⚡ AUTO DOWNLOAD (KHÔNG PHÁ UI)
+    # auto download
     st.markdown(f"""
         <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    # 🔁 xử lý file mới (GIỮ FLOW CHUẨN)
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
+    # button full width
+    st.markdown('<div class="full-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
