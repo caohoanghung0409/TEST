@@ -33,6 +33,9 @@ if "last_uploaded_names" not in st.session_state:
 if "excel" not in st.session_state:
     st.session_state.excel = None
 
+if "auto_downloaded" not in st.session_state:
+    st.session_state.auto_downloaded = False
+
 # =========================
 # STYLE (FULL PRO UI)
 # =========================
@@ -183,6 +186,7 @@ current_names = [f.name for f in uploaded_files] if uploaded_files else []
 if current_names != st.session_state.last_uploaded_names:
     st.session_state.processing = False
     st.session_state.done = False
+    st.session_state.auto_downloaded = False
     st.session_state.last_uploaded_names = current_names
 
 # =========================
@@ -304,7 +308,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO + RENAME FILE)
+# DOWNLOAD (AUTO FIX FINAL)
 # =========================
 if st.session_state.done:
 
@@ -313,24 +317,31 @@ if st.session_state.done:
     with open(st.session_state.excel, "rb") as f:
         data = f.read()
 
-    b64 = base64.b64encode(data).decode()
+    # AUTO DOWNLOAD (chỉ chạy 1 lần)
+    if not st.session_state.auto_downloaded:
+        st.session_state.auto_downloaded = True
 
-    download_html = f"""
-        <a id="download_link"
-           href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-           download="TPN_PDF_TO_EXCEL.xlsx">
-        </a>
+        st.download_button(
+            label="📥 Download Excel",
+            data=data,
+            file_name="TPN_PDF_TO_EXCEL.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-        <script>
-            document.getElementById('download_link').click();
-        </script>
-    """
+        st.rerun()
 
-    st.markdown(download_html, unsafe_allow_html=True)
+    else:
+        st.download_button(
+            label="📥 Download Excel",
+            data=data,
+            file_name="TPN_PDF_TO_EXCEL.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
+        st.session_state.auto_downloaded = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
