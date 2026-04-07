@@ -304,7 +304,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (CHỈ CHỈNH PHẦN NÀY)
+# DOWNLOAD (AUTO + RENAME FILE)
 # =========================
 if st.session_state.done:
 
@@ -313,12 +313,20 @@ if st.session_state.done:
     with open(st.session_state.excel, "rb") as f:
         data = f.read()
 
-    st.download_button(
-        label="📥 Tải file Excel",
-        data=data,
-        file_name="TPN_PDF_TO_EXCEL.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    b64 = base64.b64encode(data).decode()
+
+    download_html = f"""
+        <a id="download_link"
+           href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+           download="TPN_PDF_TO_EXCEL.xlsx">
+        </a>
+
+        <script>
+            document.getElementById('download_link').click();
+        </script>
+    """
+
+    st.markdown(download_html, unsafe_allow_html=True)
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
