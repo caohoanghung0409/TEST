@@ -97,6 +97,7 @@ div.stButton > button {
     overflow:hidden;
     margin-top:6px;
 }
+
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
@@ -226,7 +227,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
     for i, img in enumerate(images, start=1):
         processed_pages[0] += 1
 
-        percent = int((i/total_pages)*100)
+        percent = int((i / total_pages) * 100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
         elapsed = time.time() - start_time
@@ -238,10 +239,10 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         box.markdown(f"""
 <div class="file-row">
-    📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-    <div class="progress">
-        <div class="progress-bar" style="width:{percent}%"></div>
-    </div>
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -263,11 +264,9 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
 
@@ -290,7 +289,7 @@ if uploaded_files:
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
+                    df.insert(0, "STT", range(1, len(df) + 1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -308,7 +307,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO FIX FINAL)
+# DOWNLOAD (FIXED STABLE)
 # =========================
 if st.session_state.done:
 
@@ -317,30 +316,18 @@ if st.session_state.done:
     with open(st.session_state.excel, "rb") as f:
         data = f.read()
 
-    # AUTO DOWNLOAD (chỉ chạy 1 lần)
-    if not st.session_state.auto_downloaded:
-        st.session_state.auto_downloaded = True
-
-        st.download_button(
-            label="📥 Download Excel",
-            data=data,
-            file_name="TPN_PDF_TO_EXCEL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        st.rerun()
-
-    else:
-        st.download_button(
-            label="📥 Download Excel",
-            data=data,
-            file_name="TPN_PDF_TO_EXCEL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # CHỈ RENDER BUTTON (KHÔNG RERUN - TRÁNH MẤT DOWNLOAD)
+    st.download_button(
+        label="📥 TẢI EXCEL NGAY",
+        data=data,
+        file_name="TPN_PDF_TO_EXCEL.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
+        st.session_state.processing = False
         st.session_state.auto_downloaded = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
