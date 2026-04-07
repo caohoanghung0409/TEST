@@ -15,6 +15,8 @@ from openpyxl import load_workbook
 # =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
+ZIP_NAME = "THL_PDF_TO_EXCEL.zip"  # ✅ tên file download
+
 # =========================
 # SESSION
 # =========================
@@ -192,7 +194,6 @@ uploaded_files = st.file_uploader(
     key=uploader_key
 )
 
-# detect change
 current_names = [f.name for f in uploaded_files] if uploaded_files else []
 
 if current_names != st.session_state.last_uploaded_names:
@@ -330,7 +331,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO ONLY - FIX ĐÚNG)
+# DOWNLOAD FIX TÊN FILE
 # =========================
 if st.session_state.done:
 
@@ -341,12 +342,14 @@ if st.session_state.done:
 
     b64 = base64.b64encode(zip_data).decode()
 
-    # ⚡ AUTO DOWNLOAD (KHÔNG PHÁ UI)
+    # ✅ AUTO DOWNLOAD + TÊN FILE
     st.markdown(f"""
-        <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
+        <a id="dl" href="data:application/zip;base64,{b64}" download="{ZIP_NAME}"></a>
+        <script>
+            document.getElementById('dl').click();
+        </script>
     """, unsafe_allow_html=True)
 
-    # 🔁 xử lý file mới (GIỮ FLOW CHUẨN)
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
