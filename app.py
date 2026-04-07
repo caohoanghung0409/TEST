@@ -30,14 +30,13 @@ if "clear_uploader" not in st.session_state:
 if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
 
-# 🔥 NEW
 if "zip" not in st.session_state:
     st.session_state.zip = None
 
 # =========================
 # STYLE (GIỮ NGUYÊN)
 # =========================
-st.markdown(""" 
+st.markdown("""
 <style>
 header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
@@ -330,7 +329,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD + AUTO
+# DOWNLOAD AUTO REAL
 # =========================
 if st.session_state.done:
 
@@ -339,25 +338,18 @@ if st.session_state.done:
     with open(st.session_state.zip, "rb") as f:
         zip_data = f.read()
 
-    # ⚡ AUTO DOWNLOAD
     b64 = base64.b64encode(zip_data).decode()
 
+    # ⚡ AUTO DOWNLOAD REAL (iframe)
     st.markdown(f"""
-    <script>
-    const link = document.createElement('a');
-    link.href = "data:application/zip;base64,{b64}";
-    link.download = "THL_PDF_TO_EXCEL.zip";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    </script>
+        <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    st.info("⚡ Đang tự động tải... nếu không thấy → bấm nút")
+    st.info("⚡ File đang tự tải... nếu chưa thấy → kiểm tra trình duyệt")
 
     # fallback
     st.download_button(
-        "📥 TẢI FILE",
+        "📥 TẢI FILE (nếu auto lỗi)",
         zip_data,
         file_name="THL_PDF_TO_EXCEL.zip",
         mime="application/zip"
