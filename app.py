@@ -34,7 +34,7 @@ if "excel" not in st.session_state:
     st.session_state.excel = None
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN UI PRO)
 # =========================
 st.markdown("""
 <style>
@@ -53,6 +53,10 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -64,6 +68,27 @@ div.stButton > button {
     font-weight:600;
     font-size:15px;
     box-shadow:0 4px 14px rgba(0,0,0,0.15);
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
+}
+
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:6px;
+}
+
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -93,7 +118,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR FUNCTION
+# OCR
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
@@ -102,13 +127,15 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# EXTRACT PDF
+# EXTRACT (GIỮ NGUYÊN UI PROCESS)
 # =========================
-def extract_pdf(file):
+def extract_pdf(file, box):
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
+    total_pages = len(images)
 
-    for img in images:
+    for i, img in enumerate(images, start=1):
+
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -116,12 +143,25 @@ def extract_pdf(file):
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
+        percent = int((i / total_pages) * 100)
+
+        box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
     return results
 
 # =========================
-# MAIN PROCESS
+# MAIN
 # =========================
 if uploaded_files:
+
+    boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
         if st.button("🚀 Bắt đầu xử lý"):
@@ -130,14 +170,12 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        start_time = time.time()
-
         excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
 
-            for f in uploaded_files:
-                data = extract_pdf(f)
+            for i, f in enumerate(uploaded_files):
+                data = extract_pdf(f, boxes[i])
 
                 if data:
                     df = pd.DataFrame(data)
@@ -161,7 +199,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (HIDDEN + AUTO TRIGGER)
+# AUTO DOWNLOAD (FIX - HIDDEN + AUTO TRIGGER)
 # =========================
 if st.session_state.done:
 
@@ -174,32 +212,23 @@ if st.session_state.done:
 
     filename = "TPN_PDF_TO_EXCEL.xlsx"
 
-    download_html = f"""
-    <html>
-    <body>
-        <a id="download" 
-           href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-           download="{filename}">
-        </a>
+    # AUTO DOWNLOAD JS (KHÔNG HIỆN BUTTON)
+    st.components.v1.html(f"""
+        <html>
+        <body>
+            <a id="dl"
+               href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+               download="{filename}">
+            </a>
 
-        <script>
-            document.getElementById('download').click();
-        </script>
-    </body>
-    </html>
-    """
+            <script>
+                document.getElementById('dl').click();
+            </script>
+        </body>
+        </html>
+    """, height=0)
 
-    # AUTO DOWNLOAD TRIGGER
-    st.components.v1.html(download_html, height=0)
-
-    # HIDE BUTTON (KHÔNG HIỂN THỊ)
-    st.markdown("""
-        <style>
-        .stDownloadButton {display:none !important;}
-        </style>
-    """, unsafe_allow_html=True)
-
-    # RESET
+    # RESET BUTTON
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.processing = False
