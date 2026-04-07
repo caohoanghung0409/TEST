@@ -34,7 +34,7 @@ if "zip" not in st.session_state:
     st.session_state.zip = None
 
 # =========================
-# STYLE PRO MAX + NEW
+# STYLE (FIX CENTER + FULL BTN)
 # =========================
 st.markdown("""
 <style>
@@ -55,10 +55,6 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
 }
 
 /* button PRO */
@@ -69,37 +65,26 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.25s ease;
-}
-div.stButton > button:hover {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
-/* new button */
-.new-btn button {
-    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+/* NEW BUTTON FULL WIDTH */
+.full-btn {
+    width:100%;
 }
-
-/* full width button */
-.full-btn button {
+.full-btn div.stButton > button {
     width:100% !important;
-    height:55px;
-    font-size:16px;
+    height:60px;
+    font-size:17px;
 }
 
-/* center success */
-.center-success {
+/* CENTER SUCCESS REAL */
+.center-success div[data-testid="stAlert"] {
     display:flex;
     justify-content:center;
-}
-
-.center-success div[data-testid="stAlert"] {
-    width:100%;
+    align-items:center;
     text-align:center;
-    font-size:20px;
+    width:100% !important;
+    font-size:22px !important;
     font-weight:700;
 }
 
@@ -115,7 +100,6 @@ div.stButton > button:hover {
     padding:10px;
     border-radius:12px;
     background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
 /* progress */
@@ -123,13 +107,10 @@ div.stButton > button:hover {
     height:8px;
     background:#e5e7eb;
     border-radius:999px;
-    overflow:hidden;
-    margin-top:6px;
 }
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
 }
 
 /* global */
@@ -140,33 +121,11 @@ div.stButton > button:hover {
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
-    overflow:hidden;
 }
 
 .global-fill {
     height:100%;
     border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -183,10 +142,9 @@ div.stButton > button:hover {
     display:flex;
     justify-content:space-between;
     font-size:13px;
-    margin-bottom:6px;
 }
 
-/* loading text */
+/* loading */
 .loading {
     font-size:14px;
     color:#475569;
@@ -212,7 +170,6 @@ uploaded_files = st.file_uploader(
     key=uploader_key
 )
 
-# detect change
 current_names = [f.name for f in uploaded_files] if uploaded_files else []
 
 if current_names != st.session_state.last_uploaded_names:
@@ -305,7 +262,7 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -350,7 +307,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD AUTO + UI FIX
+# DONE
 # =========================
 if st.session_state.done:
 
@@ -363,12 +320,10 @@ if st.session_state.done:
 
     b64 = base64.b64encode(zip_data).decode()
 
-    # auto download
     st.markdown(f"""
         <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    # button full width
     st.markdown('<div class="full-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
