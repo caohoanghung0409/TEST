@@ -30,14 +30,11 @@ if "clear_uploader" not in st.session_state:
 if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
 
-if "excel" not in st.session_state:
-    st.session_state.excel = None
-
-if "auto_downloaded" not in st.session_state:
-    st.session_state.auto_downloaded = False
+if "zip" not in st.session_state:
+    st.session_state.zip = None
 
 # =========================
-# STYLE (FULL PRO UI)
+# STYLE PRO MAX
 # =========================
 st.markdown("""
 <style>
@@ -45,12 +42,14 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
+/* header */
 .header {
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
 }
 
+/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
@@ -62,6 +61,7 @@ header, #MainMenu, footer {visibility: hidden;}
     border-color:#3b82f6;
 }
 
+/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -71,17 +71,25 @@ div.stButton > button {
     font-weight:600;
     font-size:15px;
     box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
+/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
+/* spacing */
 .process-btn {
     margin-top: 25px;
     margin-bottom: 15px;
 }
 
+/* file row */
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -90,6 +98,7 @@ div.stButton > button {
     box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
+/* progress */
 .progress {
     height:8px;
     background:#e5e7eb;
@@ -103,6 +112,7 @@ div.stButton > button {
     transition: width 0.3s ease;
 }
 
+/* global */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -156,6 +166,7 @@ div.stButton > button {
     margin-bottom:6px;
 }
 
+/* loading text */
 .loading {
     font-size:14px;
     color:#475569;
@@ -181,12 +192,12 @@ uploaded_files = st.file_uploader(
     key=uploader_key
 )
 
+# detect change
 current_names = [f.name for f in uploaded_files] if uploaded_files else []
 
 if current_names != st.session_state.last_uploaded_names:
     st.session_state.processing = False
     st.session_state.done = False
-    st.session_state.auto_downloaded = False
     st.session_state.last_uploaded_names = current_names
 
 # =========================
@@ -216,7 +227,7 @@ def render_global_bar(percent, speed, eta):
 """
 
 # =========================
-# EXTRACT
+# PROCESS PDF
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
@@ -263,10 +274,13 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
+
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
+
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
@@ -281,67 +295,61 @@ if uploaded_files:
 
         processed_pages = [0]
 
-        excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
 
-        with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
-
+        with zipfile.ZipFile(zip_buffer.name, "w") as zipf:
             for i, f in enumerate(uploaded_files):
-                data = extract_pdf(f, boxes[i], global_box, start_time, processed_pages, total_pages_all)
+
+                data = extract_pdf(
+                    f, boxes[i], global_box,
+                    start_time, processed_pages, total_pages_all
+                )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    name = os.path.splitext(f.name)[0] + ".xlsx"
 
-        wb = load_workbook(excel_file.name)
-        for ws in wb.worksheets:
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
-        wb.save(excel_file.name)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                        df.to_excel(tmp.name, index=False)
 
-        st.session_state.excel = excel_file.name
+                        wb = load_workbook(tmp.name)
+                        ws = wb.active
+
+                        for col in ws.columns:
+                            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                            ws.column_dimensions[col[0].column_letter].width = max_len + 3
+
+                        wb.save(tmp.name)
+                        zipf.write(tmp.name, name)
+
+        st.session_state.zip = zip_buffer.name
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO FIX FINAL)
+# DOWNLOAD (AUTO ONLY - FIX ĐÚNG)
 # =========================
 if st.session_state.done:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
-    with open(st.session_state.excel, "rb") as f:
-        data = f.read()
+    with open(st.session_state.zip, "rb") as f:
+        zip_data = f.read()
 
-    # AUTO DOWNLOAD (chỉ chạy 1 lần)
-    if not st.session_state.auto_downloaded:
-        st.session_state.auto_downloaded = True
+    b64 = base64.b64encode(zip_data).decode()
 
-        st.download_button(
-            label="📥 Download Excel",
-            data=data,
-            file_name="TPN_PDF_TO_EXCEL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # ⚡ AUTO DOWNLOAD (KHÔNG PHÁ UI)
+    st.markdown(f"""
+        <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
 
-        st.rerun()
-
-    else:
-        st.download_button(
-            label="📥 Download Excel",
-            data=data,
-            file_name="TPN_PDF_TO_EXCEL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
+    # 🔁 xử lý file mới (GIỮ FLOW CHUẨN)
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
-        st.session_state.auto_downloaded = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
