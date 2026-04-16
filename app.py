@@ -35,7 +35,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN 100%)
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -89,7 +89,6 @@ div.stButton > button {
     background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 
-/* 🔥 thêm lại global bar giống bản cũ */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -152,7 +151,7 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# GLOBAL BAR RENDER
+# GLOBAL BAR
 # =========================
 def render_global(percent):
     return f"""
@@ -247,7 +246,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD + AUTO
+# AUTO DOWNLOAD (FIX ĐÚNG)
 # =========================
 if st.session_state.done:
 
@@ -256,16 +255,12 @@ if st.session_state.done:
     data = st.session_state.excel_data.getvalue()
     b64 = base64.b64encode(data).decode()
 
-    # 🔥 AUTO DOWNLOAD (GIỐNG BẢN CŨ)
+    # ✅ FIX MIME + filename chuẩn Excel
     st.markdown(f"""
-        <iframe src="data:application/octet-stream;base64,{b64}" style="display:none;"></iframe>
+        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" 
+        download="ket_qua.xlsx"
+        style="display:none;"></iframe>
     """, unsafe_allow_html=True)
-
-    st.download_button(
-        label="📥 Tải lại file",
-        data=data,
-        file_name="ket_qua.xlsx"
-    )
 
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
