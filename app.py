@@ -12,9 +12,73 @@ from io import BytesIO
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
-# TITLE
+# SESSION
 # =========================
-st.markdown("## 🚀 THL PDF → EXCEL (WEB)")
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
+if "done" not in st.session_state:
+    st.session_state.done = False
+
+if "excel_data" not in st.session_state:
+    st.session_state.excel_data = None
+
+# =========================
+# STYLE (GIỮ NGUYÊN UI)
+# =========================
+st.markdown("""
+<style>
+header, #MainMenu, footer {visibility: hidden;}
+.block-container {padding-top: 0.5rem !important;}
+.stApp { background: #f1f5f9; }
+
+.header {
+    font-size:22px;
+    font-weight:700;
+    margin-bottom:10px;
+}
+
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+}
+
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:6px;
+}
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# HEADER
+# =========================
+st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOAD
@@ -26,24 +90,18 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# OCR FUNCTION
+# OCR
 # =========================
 def process_page(img):
-    text = pytesseract.image_to_string(
-        img,
-        lang='eng',
-        config='--oem 3 --psm 6'
-    )
-
+    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
     sm = re.search(r"(SM\d{4}\.\d{4})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
-# EXTRACT PDF
+# PROCESS PDF
 # =========================
-def extract_pdf(file, progress_bar, status_text):
+def extract_pdf(file, box):
     results = []
 
     images = convert_from_bytes(file.read(), dpi=150)
@@ -51,10 +109,17 @@ def extract_pdf(file, progress_bar, status_text):
 
     for i, img in enumerate(images, start=1):
         percent = int((i / total_pages) * 100)
-        progress_bar.progress(i / total_pages)
-        status_text.text(f"📄 {file.name} - Trang {i}/{total_pages} ({percent}%)")
 
-        # crop vùng trên (tăng tốc + chính xác hơn)
+        box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -74,58 +139,59 @@ def extract_pdf(file, progress_bar, status_text):
 # =========================
 if uploaded_files:
 
-    st.info(f"📦 Tổng số file: {len(uploaded_files)}")
+    boxes = [st.empty() for _ in uploaded_files]
 
-    if st.button("🚀 Bắt đầu xử lý"):
+    if not st.session_state.processing and not st.session_state.done:
+        if st.button("🚀 Bắt đầu xử lý"):
+            st.session_state.processing = True
+            st.rerun()
 
-        start_time = time.time()
+    if st.session_state.processing:
 
         all_sheets = {}
 
-        for file in uploaded_files:
+        for i, f in enumerate(uploaded_files):
 
-            st.markdown(f"### 📄 Đang xử lý: {file.name}")
-
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            data = extract_pdf(file, progress_bar, status_text)
+            data = extract_pdf(f, boxes[i])
 
             if data:
                 df = pd.DataFrame(data)
-                df.insert(0, "STT", range(1, len(df) + 1))
+                df.insert(0, "STT", range(1, len(df)+1))
 
-                # Excel giới hạn 31 ký tự sheet name
-                sheet_name = file.name[:31]
-
+                sheet_name = f.name[:31]
                 all_sheets[sheet_name] = df
-            else:
-                st.warning(f"⚠️ Không tìm thấy dữ liệu trong file {file.name}")
 
         # =========================
-        # EXPORT EXCEL (RAM)
+        # EXPORT EXCEL (WEB)
         # =========================
         output = BytesIO()
 
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            for sheet_name, df in all_sheets.items():
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+            for sheet, df in all_sheets.items():
+                df.to_excel(writer, sheet_name=sheet, index=False)
 
         output.seek(0)
 
-        elapsed = time.time() - start_time
+        st.session_state.excel_data = output
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
-        # =========================
-        # DONE
-        # =========================
-        st.success(f"🎉 HOÀN THÀNH sau {round(elapsed, 2)}s")
+# =========================
+# DOWNLOAD
+# =========================
+if st.session_state.done:
 
-        # =========================
-        # DOWNLOAD
-        # =========================
-        st.download_button(
-            label="📥 Tải file Excel",
-            data=output,
-            file_name="ket_qua.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.success("🎉 HOÀN THÀNH !!!")
+
+    st.download_button(
+        label="📥 Tải file Excel",
+        data=st.session_state.excel_data,
+        file_name="ket_qua.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.processing = False
+        st.rerun()
