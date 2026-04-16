@@ -33,7 +33,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE (GIỮ NGUYÊN 100%)
 # =========================
 st.markdown("""
 <style>
@@ -45,6 +45,27 @@ header, #MainMenu, footer {visibility: hidden;}
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
+}
+
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+    font-size:15px;
 }
 
 .file-row {
@@ -69,6 +90,7 @@ header, #MainMenu, footer {visibility: hidden;}
 .global-wrap { margin:15px 0; }
 
 .global-bar {
+    position:relative;
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
@@ -77,13 +99,18 @@ header, #MainMenu, footer {visibility: hidden;}
 
 .global-fill {
     height:100%;
+    border-radius:999px;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 
 .global-text {
+    position:absolute;
+    width:100%;
     text-align:center;
     font-size:12px;
     font-weight:700;
+    top:0;
+    line-height:20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -94,13 +121,23 @@ header, #MainMenu, footer {visibility: hidden;}
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOADER
 # =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
+
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
+    st.session_state.processing = False
+    st.session_state.done = False
+    st.session_state.last_uploaded_names = current_names
 
 # =========================
 # OCR
@@ -119,8 +156,8 @@ def render_global(percent):
 <div class="global-wrap">
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%"></div>
+        <div class="global-text">{percent}%</div>
     </div>
-    <div class="global-text">{percent}%</div>
 </div>
 """
 
@@ -171,7 +208,12 @@ if uploaded_files:
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
-    if st.button("🚀 Bắt đầu xử lý"):
+    if not st.session_state.processing and not st.session_state.done:
+        if st.button("🚀 Bắt đầu xử lý"):
+            st.session_state.processing = True
+            st.rerun()
+
+    if st.session_state.processing:
 
         total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
@@ -181,6 +223,7 @@ if uploaded_files:
         all_sheets = {}
 
         for i, f in enumerate(uploaded_files):
+
             data = extract_pdf(f, boxes[i], global_box, processed_pages, total_pages)
 
             if data:
@@ -188,7 +231,6 @@ if uploaded_files:
                 df.insert(0, "STT", range(1, len(df)+1))
                 all_sheets[os.path.splitext(f.name)[0][:31]] = df
 
-        # EXPORT
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             for name, df in all_sheets.items():
@@ -207,23 +249,32 @@ if uploaded_files:
         wb.save(final_output)
         final_output.seek(0)
 
-        data = final_output.getvalue()
-        b64 = base64.b64encode(data).decode()
+        st.session_state.excel_data = final_output
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
-        st.success("🎉 HOÀN THÀNH !!!")
+# =========================
+# AUTO DOWNLOAD (ỔN ĐỊNH)
+# =========================
+if st.session_state.done:
 
-        # 🔥 AUTO DOWNLOAD (FIX CHUẨN NHẤT)
-        st.markdown(f"""
-        <script>
-        function downloadFile() {{
-            const link = document.createElement('a');
-            link.href = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}";
-            link.download = "ket_qua.xlsx";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }}
+    st.success("🎉 HOÀN THÀNH !!!")
 
-        setTimeout(downloadFile, 500);  // delay để chắc chắn render xong
-        </script>
-        """, unsafe_allow_html=True)
+    data = st.session_state.excel_data.getvalue()
+    b64 = base64.b64encode(data).decode()
+
+    st.markdown(f"""
+    <a id="dl" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="ket_qua.xlsx"></a>
+    <script>
+        setTimeout(function(){{
+            document.getElementById('dl').click();
+        }}, 800);
+    </script>
+    """, unsafe_allow_html=True)
+
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.processing = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
