@@ -3,8 +3,6 @@ import pytesseract
 from pdf2image import convert_from_bytes
 import pandas as pd
 import re
-import tempfile
-import zipfile
 import os
 import time
 import base64
@@ -54,10 +52,6 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -67,7 +61,6 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
 }
 
 .file-row {
@@ -92,7 +85,6 @@ div.stButton > button {
 .global-wrap { margin:15px 0; }
 
 .global-bar {
-    position:relative;
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
@@ -101,18 +93,13 @@ div.stButton > button {
 
 .global-fill {
     height:100%;
-    border-radius:999px;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 
 .global-text {
-    position:absolute;
-    width:100%;
     text-align:center;
     font-size:12px;
     font-weight:700;
-    top:0;
-    line-height:20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -123,7 +110,7 @@ div.stButton > button {
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOADER
+# UPLOAD
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
@@ -158,8 +145,8 @@ def render_global(percent):
 <div class="global-wrap">
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%"></div>
-        <div class="global-text">{percent}%</div>
     </div>
+    <div class="global-text">{percent}%</div>
 </div>
 """
 
@@ -233,20 +220,33 @@ if uploaded_files:
                 df.insert(0, "STT", range(1, len(df)+1))
                 all_sheets[os.path.splitext(f.name)[0][:31]] = df
 
+        # ===== EXPORT =====
         output = BytesIO()
+
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             for name, df in all_sheets.items():
                 df.to_excel(writer, sheet_name=name, index=False)
 
         output.seek(0)
 
-        st.session_state.excel_data = output
+        # ===== AUTO WIDTH FIX =====
+        wb = load_workbook(output)
+        for ws in wb.worksheets:
+            for col in ws.columns:
+                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+
+        final_output = BytesIO()
+        wb.save(final_output)
+        final_output.seek(0)
+
+        st.session_state.excel_data = final_output
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (FIX ĐÚNG)
+# AUTO DOWNLOAD (JS)
 # =========================
 if st.session_state.done:
 
@@ -255,11 +255,11 @@ if st.session_state.done:
     data = st.session_state.excel_data.getvalue()
     b64 = base64.b64encode(data).decode()
 
-    # ✅ FIX MIME + filename chuẩn Excel
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" 
-        download="ket_qua.xlsx"
-        style="display:none;"></iframe>
+    <a id="dl" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="ket_qua.xlsx"></a>
+    <script>
+        document.getElementById('dl').click();
+    </script>
     """, unsafe_allow_html=True)
 
     if st.button("🔄 XỬ LÝ FILE MỚI"):
