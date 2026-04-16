@@ -192,7 +192,6 @@ uploaded_files = st.file_uploader(
     key=uploader_key
 )
 
-# detect change
 current_names = [f.name for f in uploaded_files] if uploaded_files else []
 
 if current_names != st.session_state.last_uploaded_names:
@@ -201,13 +200,25 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR (FIX XOAY 4 HƯỚNG)
 # =========================
 def process_page(img):
-    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-    return (sm.group(1), date.group(1)) if sm and date else (None, None)
+    for angle in [0, 90, 180, 270]:
+        rotated = img.rotate(angle, expand=True)
+
+        text = pytesseract.image_to_string(
+            rotated,
+            lang='eng',
+            config='--oem 3 --psm 6'
+        )
+
+        sm = re.search(r"(SM\d{4}\.\d{4})", text)
+        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+
+        if sm and date:
+            return sm.group(1), date.group(1)
+
+    return None, None
 
 # =========================
 # GLOBAL BAR
@@ -330,7 +341,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (AUTO ONLY - FIX ĐÚNG)
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
@@ -341,12 +352,10 @@ if st.session_state.done:
 
     b64 = base64.b64encode(zip_data).decode()
 
-    # ⚡ AUTO DOWNLOAD (KHÔNG PHÁ UI)
     st.markdown(f"""
         <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    # 🔁 xử lý file mới (GIỮ FLOW CHUẨN)
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
