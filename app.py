@@ -33,7 +33,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -52,7 +52,6 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
 }
 
 div.stButton > button {
@@ -108,6 +107,11 @@ div.stButton > button {
     top:0;
     line-height:20px;
 }
+
+/* ẨN download button */
+div[data-testid="stDownloadButton"] {
+    display: none;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -162,7 +166,6 @@ def render_global(percent):
 # =========================
 def extract_pdf(file, box, global_box, processed_pages, total_pages):
     results = []
-
     images = convert_from_bytes(file.read(), dpi=150)
 
     for i, img in enumerate(images, start=1):
@@ -250,27 +253,29 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (CHẮC CHẮN CHẠY)
+# AUTO DOWNLOAD (FINAL)
 # =========================
 if st.session_state.done:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
     st.download_button(
-        label="hidden_download",
+        label="download",
         data=st.session_state.excel_data,
         file_name="ket_qua.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="auto_dl"
+        key="real_download"
     )
 
-    # 🔥 auto click vào button
+    # auto click đúng button
     st.markdown("""
     <script>
-        const btn = window.parent.document.querySelector('button[kind="secondary"]');
-        if (btn) {
+    const btns = window.parent.document.querySelectorAll('button');
+    btns.forEach(btn => {
+        if (btn.innerText === 'download') {
             btn.click();
         }
+    });
     </script>
     """, unsafe_allow_html=True)
 
