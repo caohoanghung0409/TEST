@@ -3,7 +3,12 @@ import pytesseract
 from pdf2image import convert_from_bytes
 import pandas as pd
 import re
+import tempfile
+import zipfile
+import os
 import time
+import base64
+from openpyxl import load_workbook
 from io import BytesIO
 
 # =========================
@@ -20,11 +25,17 @@ if "processing" not in st.session_state:
 if "done" not in st.session_state:
     st.session_state.done = False
 
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
+
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
+
 if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN UI)
+# STYLE PRO MAX (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -43,6 +54,10 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -52,6 +67,7 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
+    font-size:15px;
 }
 
 .file-row {
@@ -81,13 +97,23 @@ div.stButton > button {
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOADER
 # =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
+
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
+    st.session_state.processing = False
+    st.session_state.done = False
+    st.session_state.last_uploaded_names = current_names
 
 # =========================
 # OCR
@@ -108,7 +134,7 @@ def extract_pdf(file, box):
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-        percent = int((i / total_pages) * 100)
+        percent = int((i/total_pages)*100)
 
         box.markdown(f"""
 <div class="file-row">
@@ -119,7 +145,6 @@ def extract_pdf(file, box):
 </div>
 """, unsafe_allow_html=True)
 
-        # crop top
         w, h = img.size
         img = img.crop((0, 0, w, int(h * 0.4)))
 
@@ -158,11 +183,11 @@ if uploaded_files:
                 df = pd.DataFrame(data)
                 df.insert(0, "STT", range(1, len(df)+1))
 
-                sheet_name = f.name[:31]
+                sheet_name = os.path.splitext(f.name)[0][:31]
                 all_sheets[sheet_name] = df
 
         # =========================
-        # EXPORT EXCEL (WEB)
+        # EXPORT EXCEL (THAY ZIP)
         # =========================
         output = BytesIO()
 
@@ -194,4 +219,5 @@ if st.session_state.done:
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.processing = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
