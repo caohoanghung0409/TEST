@@ -3,8 +3,6 @@ import pytesseract
 from pdf2image import convert_from_bytes
 import pandas as pd
 import re
-import tempfile
-import zipfile
 import os
 import time
 import base64
@@ -35,7 +33,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -43,46 +41,24 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
+.header {font-size:22px;font-weight:700;margin-bottom:10px;}
 
-[data-testid="stFileUploader"] {
-    border: 2px dashed #93c5fd;
-    padding: 25px;
-    border-radius: 18px;
-    background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
-}
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-    font-size:15px;
-}
-
-.file-row {
-    margin-top:12px;
-    padding:10px;
-    border-radius:12px;
-    background:white;
-}
-
-.progress {
-    height:8px;
+.global-bar {
+    height:18px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
-    margin-top:6px;
+    margin-bottom:10px;
+}
+.global-fill {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+
+.file-row {margin-top:12px;padding:10px;border-radius:12px;background:white;}
+
+.progress {
+    height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:6px;
 }
 .progress-bar {
     height:100%;
@@ -97,7 +73,7 @@ div.stButton > button {
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOADER
+# UPLOAD
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
@@ -127,20 +103,34 @@ def process_page(img):
 # =========================
 # PROCESS PDF
 # =========================
-def extract_pdf(file, box):
+def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages):
     results = []
-
     images = convert_from_bytes(file.read(), dpi=150)
-    total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
-        percent = int((i/total_pages)*100)
+        processed_pages[0] += 1
 
+        percent_file = int((i/len(images))*100)
+        percent_global = int((processed_pages[0]/total_pages)*100)
+
+        elapsed = time.time() - start_time
+        speed = processed_pages[0] / elapsed if elapsed else 0
+        eta = int((total_pages - processed_pages[0]) / speed) if speed else 0
+
+        # GLOBAL BAR
+        global_box.markdown(f"""
+<div>⚡ {percent_global}% | 🚀 {speed:.2f} trang/s | ⏳ {eta}s</div>
+<div class="global-bar">
+<div class="global-fill" style="width:{percent_global}%"></div>
+</div>
+""", unsafe_allow_html=True)
+
+        # FILE BAR
         box.markdown(f"""
 <div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+📄 {file.name} — Trang {i}/{len(images)} ({percent_file}%)
 <div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
+<div class="progress-bar" style="width:{percent_file}%"></div>
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -149,13 +139,8 @@ def extract_pdf(file, box):
         img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, date = process_page(img)
-
         if sm and date:
-            results.append({
-                "Trang": i,
-                "SM": sm,
-                "Ngày": date
-            })
+            results.append({"Trang": i, "SM": sm, "Ngày": date})
 
     return results
 
@@ -164,6 +149,7 @@ def extract_pdf(file, box):
 # =========================
 if uploaded_files:
 
+    global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
@@ -173,31 +159,36 @@ if uploaded_files:
 
     if st.session_state.processing:
 
+        start_time = time.time()
+
+        total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+        for f in uploaded_files:
+            f.seek(0)
+
+        processed_pages = [0]
         all_sheets = {}
 
         for i, f in enumerate(uploaded_files):
 
-            data = extract_pdf(f, boxes[i])
+            data = extract_pdf(
+                f, boxes[i], global_box,
+                start_time, processed_pages, total_pages
+            )
 
             if data:
                 df = pd.DataFrame(data)
                 df.insert(0, "STT", range(1, len(df)+1))
+                all_sheets[os.path.splitext(f.name)[0][:31]] = df
 
-                sheet_name = os.path.splitext(f.name)[0][:31]
-                all_sheets[sheet_name] = df
-
-        # =========================
         # EXPORT EXCEL
-        # =========================
         output = BytesIO()
-
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            for sheet, df in all_sheets.items():
-                df.to_excel(writer, sheet_name=sheet, index=False)
+            for name, df in all_sheets.items():
+                df.to_excel(writer, sheet_name=name, index=False)
 
         output.seek(0)
 
-        # AUTO WIDTH (GIỮ CHUẨN BẢN CŨ)
+        # AUTO WIDTH
         wb = load_workbook(output)
         for ws in wb.worksheets:
             for col in ws.columns:
@@ -214,17 +205,24 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD + AUTO
 # =========================
 if st.session_state.done:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
+    data = st.session_state.excel_data.getvalue()
+    b64 = base64.b64encode(data).decode()
+
+    # AUTO DOWNLOAD
+    st.markdown(f"""
+        <iframe src="data:application/octet-stream;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
+
     st.download_button(
-        label="📥 Tải file Excel",
-        data=st.session_state.excel_data,
-        file_name="ket_qua.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        label="📥 Tải lại file",
+        data=data,
+        file_name="ket_qua.xlsx"
     )
 
     if st.button("🔄 XỬ LÝ FILE MỚI"):
