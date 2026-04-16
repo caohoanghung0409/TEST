@@ -187,7 +187,7 @@ if uploaded_files:
                 all_sheets[sheet_name] = df
 
         # =========================
-        # EXPORT EXCEL (THAY ZIP)
+        # EXPORT EXCEL
         # =========================
         output = BytesIO()
 
@@ -197,7 +197,18 @@ if uploaded_files:
 
         output.seek(0)
 
-        st.session_state.excel_data = output
+        # AUTO WIDTH (GIỮ CHUẨN BẢN CŨ)
+        wb = load_workbook(output)
+        for ws in wb.worksheets:
+            for col in ws.columns:
+                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+
+        final_output = BytesIO()
+        wb.save(final_output)
+        final_output.seek(0)
+
+        st.session_state.excel_data = final_output
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
