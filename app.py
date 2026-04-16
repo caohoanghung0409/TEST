@@ -34,7 +34,7 @@ if "zip" not in st.session_state:
     st.session_state.zip = None
 
 # =========================
-# STYLE
+# STYLE PRO MAX
 # =========================
 st.markdown("""
 <style>
@@ -42,15 +42,26 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header { font-size:22px; font-weight:700; margin-bottom:10px; }
+/* header */
+.header {
+    font-size:22px;
+    font-weight:700;
+    margin-bottom:10px;
+}
 
+/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
     border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
+/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -58,10 +69,108 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
+    font-size:15px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
+/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+/* spacing */
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 15px;
+}
+
+/* file row */
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
+}
+
+/* progress */
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:6px;
+}
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    transition: width 0.3s ease;
+}
+
+/* global */
+.global-wrap { margin:15px 0; }
+
+.global-bar {
+    position:relative;
+    height:20px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+}
+
+.global-fill {
+    height:100%;
+    border-radius:999px;
+    transition: width 0.4s ease;
+}
+
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
+
+.global-text {
+    position:absolute;
+    width:100%;
+    text-align:center;
+    font-size:12px;
+    font-weight:700;
+    top:0;
+    line-height:20px;
+}
+
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:13px;
+    margin-bottom:6px;
+}
+
+/* loading text */
+.loading {
+    font-size:14px;
+    color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -83,6 +192,7 @@ uploaded_files = st.file_uploader(
     key=uploader_key
 )
 
+# detect change
 current_names = [f.name for f in uploaded_files] if uploaded_files else []
 
 if current_names != st.session_state.last_uploaded_names:
@@ -91,56 +201,28 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (FIX XOAY + TỐI ƯU)
+# OCR
 # =========================
 def process_page(img):
-    angles = [0, 90, 180, 270]
-
-    for angle in angles:
-        rotated = img.rotate(angle, expand=True)
-
-        # crop SAU khi xoay
-        w, h = rotated.size
-        cropped = rotated.crop((0, 0, w, int(h * 0.4)))
-
-        # tăng chất lượng OCR
-        gray = cropped.convert("L")
-        bw = gray.point(lambda x: 0 if x < 150 else 255, '1')
-
-        text = pytesseract.image_to_string(
-            bw,
-            lang='eng',
-            config='--oem 3 --psm 6'
-        )
-
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-
-        if sm and date:
-            return sm.group(1), date.group(1)
-
-        # fallback (nếu crop fail)
-        text_full = pytesseract.image_to_string(
-            rotated,
-            lang='eng',
-            config='--oem 3 --psm 6'
-        )
-
-        sm = re.search(r"(SM\d{4}\.\d{4})", text_full)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text_full)
-
-        if sm and date:
-            return sm.group(1), date.group(1)
-
-    return None, None
+    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
+    sm = re.search(r"(SM\d{4}\.\d{4})", text)
+    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+    return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
 # GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
     return f"""
-<div style="margin:10px 0;">
-    ⚡ {percent}% | 🚀 {speed:.2f} pages/s | ⏳ {eta}s
+<div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>🚀 {speed:.2f} pages/s • ⏳ {eta}s</div>
+    </div>
+    <div class="global-bar">
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+        <div class="global-text">{percent}%</div>
+    </div>
 </div>
 """
 
@@ -165,11 +247,19 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
 
-        box.write(f"{file.name} - Trang {i}/{total_pages} ({percent}%)")
+        box.markdown(f"""
+<div class="file-row">
+    📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+    <div class="progress">
+        <div class="progress-bar" style="width:{percent}%"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-        # ❌ bỏ crop ở đây (đã fix trong process_page)
+        w, h = img.size
+        img = img.crop((0, 0, w, int(h * 0.4)))
+
         sm, date = process_page(img)
-
         if sm and date:
             results.append({"SM": sm, "Ngày": date})
 
@@ -184,11 +274,18 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
+
+        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
+
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
+        st.markdown('</div>', unsafe_allow_html=True)
+
     if st.session_state.processing:
+
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -233,7 +330,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (AUTO ONLY - FIX ĐÚNG)
 # =========================
 if st.session_state.done:
 
@@ -244,11 +341,15 @@ if st.session_state.done:
 
     b64 = base64.b64encode(zip_data).decode()
 
+    # ⚡ AUTO DOWNLOAD (KHÔNG PHÁ UI)
     st.markdown(f"""
         <iframe src="data:application/zip;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
+    # 🔁 xử lý file mới (GIỮ FLOW CHUẨN)
+    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
