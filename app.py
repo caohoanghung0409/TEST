@@ -47,22 +47,6 @@ header, #MainMenu, footer {visibility: hidden;}
     margin-bottom:10px;
 }
 
-[data-testid="stFileUploader"] {
-    border: 2px dashed #93c5fd;
-    padding: 25px;
-    border-radius: 18px;
-    background: white;
-}
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-}
-
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -112,21 +96,11 @@ st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_htm
 # =========================
 # UPLOAD
 # =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
-
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
+    accept_multiple_files=True
 )
-
-current_names = [f.name for f in uploaded_files] if uploaded_files else []
-
-if current_names != st.session_state.last_uploaded_names:
-    st.session_state.processing = False
-    st.session_state.done = False
-    st.session_state.last_uploaded_names = current_names
 
 # =========================
 # OCR
@@ -197,12 +171,7 @@ if uploaded_files:
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
-    if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Bắt đầu xử lý"):
-            st.session_state.processing = True
-            st.rerun()
-
-    if st.session_state.processing:
+    if st.button("🚀 Bắt đầu xử lý"):
 
         total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
@@ -212,7 +181,6 @@ if uploaded_files:
         all_sheets = {}
 
         for i, f in enumerate(uploaded_files):
-
             data = extract_pdf(f, boxes[i], global_box, processed_pages, total_pages)
 
             if data:
@@ -220,16 +188,15 @@ if uploaded_files:
                 df.insert(0, "STT", range(1, len(df)+1))
                 all_sheets[os.path.splitext(f.name)[0][:31]] = df
 
-        # ===== EXPORT =====
+        # EXPORT
         output = BytesIO()
-
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             for name, df in all_sheets.items():
                 df.to_excel(writer, sheet_name=name, index=False)
 
         output.seek(0)
 
-        # ===== AUTO WIDTH FIX =====
+        # AUTO WIDTH
         wb = load_workbook(output)
         for ws in wb.worksheets:
             for col in ws.columns:
@@ -240,30 +207,23 @@ if uploaded_files:
         wb.save(final_output)
         final_output.seek(0)
 
-        st.session_state.excel_data = final_output
-        st.session_state.processing = False
-        st.session_state.done = True
-        st.rerun()
+        data = final_output.getvalue()
+        b64 = base64.b64encode(data).decode()
 
-# =========================
-# AUTO DOWNLOAD (JS)
-# =========================
-if st.session_state.done:
+        st.success("🎉 HOÀN THÀNH !!!")
 
-    st.success("🎉 HOÀN THÀNH !!!")
+        # 🔥 AUTO DOWNLOAD (FIX CHUẨN NHẤT)
+        st.markdown(f"""
+        <script>
+        function downloadFile() {{
+            const link = document.createElement('a');
+            link.href = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}";
+            link.download = "ket_qua.xlsx";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }}
 
-    data = st.session_state.excel_data.getvalue()
-    b64 = base64.b64encode(data).decode()
-
-    st.markdown(f"""
-    <a id="dl" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="ket_qua.xlsx"></a>
-    <script>
-        document.getElementById('dl').click();
-    </script>
-    """, unsafe_allow_html=True)
-
-    if st.button("🔄 XỬ LÝ FILE MỚI"):
-        st.session_state.done = False
-        st.session_state.processing = False
-        st.session_state.clear_uploader = not st.session_state.clear_uploader
-        st.rerun()
+        setTimeout(downloadFile, 500);  // delay để chắc chắn render xong
+        </script>
+        """, unsafe_allow_html=True)
