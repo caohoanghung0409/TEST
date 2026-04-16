@@ -33,7 +33,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN 100%)
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -54,9 +54,6 @@ header, #MainMenu, footer {visibility: hidden;}
     background: white;
     transition: 0.3s;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
-}
 
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
@@ -65,7 +62,6 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
 }
 
 .file-row {
@@ -238,7 +234,6 @@ if uploaded_files:
 
         output.seek(0)
 
-        # AUTO WIDTH
         wb = load_workbook(output)
         for ws in wb.worksheets:
             for col in ws.columns:
@@ -255,21 +250,27 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (ỔN ĐỊNH)
+# AUTO DOWNLOAD (CHẮC CHẮN CHẠY)
 # =========================
 if st.session_state.done:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
-    data = st.session_state.excel_data.getvalue()
-    b64 = base64.b64encode(data).decode()
+    st.download_button(
+        label="hidden_download",
+        data=st.session_state.excel_data,
+        file_name="ket_qua.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="auto_dl"
+    )
 
-    st.markdown(f"""
-    <a id="dl" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="ket_qua.xlsx"></a>
+    # 🔥 auto click vào button
+    st.markdown("""
     <script>
-        setTimeout(function(){{
-            document.getElementById('dl').click();
-        }}, 800);
+        const btn = window.parent.document.querySelector('button[kind="secondary"]');
+        if (btn) {
+            btn.click();
+        }
     </script>
     """, unsafe_allow_html=True)
 
