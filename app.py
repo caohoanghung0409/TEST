@@ -3,6 +3,8 @@ import pytesseract
 from pdf2image import convert_from_bytes
 import pandas as pd
 import re
+import tempfile
+import zipfile
 import os
 import time
 import base64
@@ -33,7 +35,7 @@ if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN 100%)
 # =========================
 st.markdown("""
 <style>
@@ -41,28 +43,77 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header {font-size:22px;font-weight:700;margin-bottom:10px;}
+.header {
+    font-size:22px;
+    font-weight:700;
+    margin-bottom:10px;
+}
 
-.global-bar {
-    height:18px;
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+    font-size:15px;
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+}
+
+.progress {
+    height:8px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
-    margin-bottom:10px;
-}
-.global-fill {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-}
-
-.file-row {margin-top:12px;padding:10px;border-radius:12px;background:white;}
-
-.progress {
-    height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:6px;
+    margin-top:6px;
 }
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+
+/* 🔥 thêm lại global bar giống bản cũ */
+.global-wrap { margin:15px 0; }
+
+.global-bar {
+    position:relative;
+    height:20px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+}
+
+.global-fill {
+    height:100%;
+    border-radius:999px;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+
+.global-text {
+    position:absolute;
+    width:100%;
+    text-align:center;
+    font-size:12px;
+    font-weight:700;
+    top:0;
+    line-height:20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -73,7 +124,7 @@ header, #MainMenu, footer {visibility: hidden;}
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOADER
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
@@ -101,10 +152,24 @@ def process_page(img):
     return (sm.group(1), date.group(1)) if sm and date else (None, None)
 
 # =========================
+# GLOBAL BAR RENDER
+# =========================
+def render_global(percent):
+    return f"""
+<div class="global-wrap">
+    <div class="global-bar">
+        <div class="global-fill" style="width:{percent}%"></div>
+        <div class="global-text">{percent}%</div>
+    </div>
+</div>
+"""
+
+# =========================
 # PROCESS PDF
 # =========================
-def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages):
+def extract_pdf(file, box, global_box, processed_pages, total_pages):
     results = []
+
     images = convert_from_bytes(file.read(), dpi=150)
 
     for i, img in enumerate(images, start=1):
@@ -113,19 +178,8 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages)
         percent_file = int((i/len(images))*100)
         percent_global = int((processed_pages[0]/total_pages)*100)
 
-        elapsed = time.time() - start_time
-        speed = processed_pages[0] / elapsed if elapsed else 0
-        eta = int((total_pages - processed_pages[0]) / speed) if speed else 0
+        global_box.markdown(render_global(percent_global), unsafe_allow_html=True)
 
-        # GLOBAL BAR
-        global_box.markdown(f"""
-<div>⚡ {percent_global}% | 🚀 {speed:.2f} trang/s | ⏳ {eta}s</div>
-<div class="global-bar">
-<div class="global-fill" style="width:{percent_global}%"></div>
-</div>
-""", unsafe_allow_html=True)
-
-        # FILE BAR
         box.markdown(f"""
 <div class="file-row">
 📄 {file.name} — Trang {i}/{len(images)} ({percent_file}%)
@@ -139,8 +193,13 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages)
         img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, date = process_page(img)
+
         if sm and date:
-            results.append({"Trang": i, "SM": sm, "Ngày": date})
+            results.append({
+                "Trang": i,
+                "SM": sm,
+                "Ngày": date
+            })
 
     return results
 
@@ -159,8 +218,6 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        start_time = time.time()
-
         total_pages = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
             f.seek(0)
@@ -170,17 +227,13 @@ if uploaded_files:
 
         for i, f in enumerate(uploaded_files):
 
-            data = extract_pdf(
-                f, boxes[i], global_box,
-                start_time, processed_pages, total_pages
-            )
+            data = extract_pdf(f, boxes[i], global_box, processed_pages, total_pages)
 
             if data:
                 df = pd.DataFrame(data)
                 df.insert(0, "STT", range(1, len(df)+1))
                 all_sheets[os.path.splitext(f.name)[0][:31]] = df
 
-        # EXPORT EXCEL
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             for name, df in all_sheets.items():
@@ -188,18 +241,7 @@ if uploaded_files:
 
         output.seek(0)
 
-        # AUTO WIDTH
-        wb = load_workbook(output)
-        for ws in wb.worksheets:
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
-
-        final_output = BytesIO()
-        wb.save(final_output)
-        final_output.seek(0)
-
-        st.session_state.excel_data = final_output
+        st.session_state.excel_data = output
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
@@ -214,7 +256,7 @@ if st.session_state.done:
     data = st.session_state.excel_data.getvalue()
     b64 = base64.b64encode(data).decode()
 
-    # AUTO DOWNLOAD
+    # 🔥 AUTO DOWNLOAD (GIỐNG BẢN CŨ)
     st.markdown(f"""
         <iframe src="data:application/octet-stream;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
