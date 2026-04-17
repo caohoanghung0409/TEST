@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN)
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -186,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR FIX (GIỮ NGUYÊN)
+# OCR
 # =========================
 def ocr_extract(img):
 
@@ -198,84 +198,42 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    sm, date = read(img)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    crop = img.crop((0, 0, w, int(h * 0.4)))
-    sm, date = read(crop)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img180 = img.rotate(180, expand=True)
-    sm, date = read(img180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    w2, h2 = img180.size
-    crop180 = img180.crop((0, 0, w2, int(h2 * 0.4)))
-    sm, date = read(crop180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img90 = img.rotate(90, expand=True)
-    w3, h3 = img90.size
-    crop90 = img90.crop((0, 0, w3, int(h3 * 0.4)))
-    sm, date = read(crop90)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img270 = img.rotate(270, expand=True)
-    w4, h4 = img270.size
-    crop270 = img270.crop((0, 0, w4, int(h4 * 0.4)))
-    sm, date = read(crop270)
-    if sm and date:
-        return sm.group(1), date.group(1)
+    for variant in [
+        img,
+        img.crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True)
+    ]:
+        sm, date = read(variant)
+        if sm and date:
+            return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# GLOBAL BAR (JS TIMER MƯỢT)
+# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
 # =========================
-def render_global_bar(percent, eta, start_time):
+def render_global_bar(percent, speed, eta):
+
+    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
 
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>
-            ⏱ <span id="timer">0m 00s</span> • ⏳ {eta}s
-        </div>
+        <div>⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
-
-<script>
-const startTime = {int(start_time * 1000)};
-
-function updateTimer() {{
-    const now = new Date().getTime();
-    const diff = Math.floor((now - startTime) / 1000);
-
-    const m = Math.floor(diff / 60);
-    const s = diff % 60;
-
-    const text = m + "m " + (s < 10 ? "0" : "") + s + "s";
-
-    const el = document.getElementById("timer");
-    if (el) el.innerText = text;
-}}
-
-setInterval(updateTimer, 1000);
-updateTimer();
-</script>
 """
 
 # =========================
-# PROCESS PDF
+# PROCESS
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
@@ -295,10 +253,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(
-            render_global_bar(global_percent, eta, start_time),
-            unsafe_allow_html=True
-        )
+        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
@@ -366,6 +321,7 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
+
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
