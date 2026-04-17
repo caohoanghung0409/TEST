@@ -9,7 +9,7 @@ import os
 import time
 import base64
 from openpyxl import load_workbook
-from openpyxl.styles import Border, Side  # ✅ thêm
+from openpyxl.styles import Border, Side, Font  # ✅ thêm Font
 
 # =========================
 # CONFIG
@@ -264,7 +264,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
             results.append({
                 "SM": sm,
                 "Ngày": date,
-                "Trang": i   # ✅ thêm
+                "Trang": i
             })
 
     return results
@@ -326,13 +326,17 @@ if uploaded_files:
                             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
-                        # ✅ border full
+                        # border
                         thin = Side(style='thin')
                         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
                         for row in ws.iter_rows():
                             for cell in row:
                                 cell.border = border
+
+                        # ✅ HEADER BOLD
+                        for cell in ws[1]:
+                            cell.font = Font(bold=True)
 
                         wb.save(tmp.name)
                         zipf.write(tmp.name, name)
