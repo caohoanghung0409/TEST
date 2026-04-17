@@ -213,7 +213,7 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
 
@@ -285,13 +285,9 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
 
@@ -321,7 +317,6 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
@@ -349,7 +344,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (CHỈ SỬA CHỖ NÀY)
 # =========================
 if st.session_state.done:
 
@@ -358,15 +353,14 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    b64 = base64.b64encode(data).decode()
+    st.download_button(
+        label="📥 TẢI FILE EXCEL",
+        data=data,
+        file_name="THLPDFTOEXCEL.xlsx",  # ✅ CHỈ SỬA ĐÚNG CHỖ NÀY
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-    st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
