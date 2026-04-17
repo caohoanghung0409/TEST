@@ -6,7 +6,6 @@ import re
 import tempfile
 import os
 import time
-import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -34,7 +33,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (FULL GỐC)
+# STYLE FULL
 # =========================
 st.markdown("""
 <style>
@@ -42,14 +41,12 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-/* header */
 .header {
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
 }
 
-/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
@@ -61,7 +58,6 @@ header, #MainMenu, footer {visibility: hidden;}
     border-color:#3b82f6;
 }
 
-/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -78,18 +74,15 @@ div.stButton > button:hover {
     box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
-/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
-/* spacing */
 .process-btn {
     margin-top: 25px;
     margin-bottom: 15px;
 }
 
-/* file row */
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -98,7 +91,6 @@ div.stButton > button:hover {
     box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
-/* progress */
 .progress {
     height:8px;
     background:#e5e7eb;
@@ -112,7 +104,6 @@ div.stButton > button:hover {
     transition: width 0.3s ease;
 }
 
-/* global */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -166,7 +157,6 @@ div.stButton > button:hover {
     margin-bottom:6px;
 }
 
-/* loading text */
 .loading {
     font-size:14px;
     color:#475569;
@@ -344,7 +334,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (GIỮ AUTO + ĐỔI TÊN FILE)
+# DOWNLOAD (FIX)
 # =========================
 if st.session_state.done:
 
@@ -353,15 +343,12 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    b64 = base64.b64encode(data).decode()
-
-    st.markdown(f"""
-        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" 
-           download="THLPDFTOEXCEL.xlsx"></a>
-        <script>
-            document.querySelector('a[download]').click();
-        </script>
-    """, unsafe_allow_html=True)
+    st.download_button(
+        label="⬇️ TẢI FILE EXCEL",
+        data=data,
+        file_name="THLPDFTOEXCEL.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
