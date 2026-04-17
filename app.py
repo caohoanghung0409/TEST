@@ -9,6 +9,7 @@ import os
 import time
 import base64
 from openpyxl import load_workbook
+from openpyxl.styles import Border, Side  # ✅ thêm
 
 # =========================
 # CONFIG
@@ -42,12 +43,14 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
+/* header */
 .header {
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
 }
 
+/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
@@ -59,6 +62,7 @@ header, #MainMenu, footer {visibility: hidden;}
     border-color:#3b82f6;
 }
 
+/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -75,15 +79,18 @@ div.stButton > button:hover {
     box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
+/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
+/* spacing */
 .process-btn {
     margin-top: 25px;
     margin-bottom: 15px;
 }
 
+/* file row */
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -92,6 +99,7 @@ div.stButton > button:hover {
     box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
+/* progress */
 .progress {
     height:8px;
     background:#e5e7eb;
@@ -105,6 +113,7 @@ div.stButton > button:hover {
     transition: width 0.3s ease;
 }
 
+/* global */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -158,6 +167,7 @@ div.stButton > button:hover {
     margin-bottom:6px;
 }
 
+/* loading text */
 .loading {
     font-size:14px;
     color:#475569;
@@ -254,7 +264,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
             results.append({
                 "SM": sm,
                 "Ngày": date,
-                "Trang": i   # ✅ thêm dòng này
+                "Trang": i   # ✅ thêm
             })
 
     return results
@@ -311,9 +321,18 @@ if uploaded_files:
                         wb = load_workbook(tmp.name)
                         ws = wb.active
 
+                        # auto width
                         for col in ws.columns:
                             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                             ws.column_dimensions[col[0].column_letter].width = max_len + 3
+
+                        # ✅ border full
+                        thin = Side(style='thin')
+                        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+                        for row in ws.iter_rows():
+                            for cell in row:
+                                cell.border = border
 
                         wb.save(tmp.name)
                         zipf.write(tmp.name, name)
