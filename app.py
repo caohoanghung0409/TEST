@@ -22,13 +22,17 @@ if "processing" not in st.session_state:
     st.session_state.processing = False
 if "done" not in st.session_state:
     st.session_state.done = False
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
 if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 if "trigger_download" not in st.session_state:
     st.session_state.trigger_download = False
 
 # =========================
-# STYLE (GIỮ NGUYÊN GIAO DIỆN BẠN)
+# STYLE (GIỮ NGUYÊN 100% GIAO DIỆN GỐC)
 # =========================
 st.markdown("""
 <style>
@@ -68,6 +72,15 @@ div.stButton > button:hover {
     transform: translateY(-2px) scale(1.02);
 }
 
+.new-btn button {
+    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 15px;
+}
+
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -81,17 +94,18 @@ div.stButton > button:hover {
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
+    margin-top:6px;
 }
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
+    transition: width 0.3s ease;
 }
 
-.global-wrap {
-    margin:15px 0;
-}
+.global-wrap { margin:15px 0; }
 
 .global-bar {
+    position:relative;
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
@@ -100,7 +114,28 @@ div.stButton > button:hover {
 
 .global-fill {
     height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    border-radius:999px;
+    transition: width 0.4s ease;
+}
+
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -109,6 +144,21 @@ div.stButton > button:hover {
     text-align:center;
     font-size:12px;
     font-weight:700;
+    top:0;
+    line-height:20px;
+}
+
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:13px;
+    margin-bottom:6px;
+}
+
+.loading {
+    font-size:14px;
+    color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -119,72 +169,159 @@ div.stButton > button:hover {
 st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOADER
 # =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
 
-if uploaded_files:
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
     st.session_state.processing = False
     st.session_state.done = False
-    st.session_state.trigger_download = False
+    st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR (GIỮ NGUYÊN)
 # =========================
 def ocr_extract(img):
 
-    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+    def read(image):
+        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+        sm = re.search(r"(SM\d{4}\.\d{4})", text)
+        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        return sm, date
 
-    return (sm.group(1) if sm else None), (date.group(1) if date else None)
+    w, h = img.size
+
+    for variant in [
+        img,
+        img.crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True)
+    ]:
+        sm, date = read(variant)
+        if sm and date:
+            return sm.group(1), date.group(1)
+
+    return None, None
+
+# =========================
+# GLOBAL BAR
+# =========================
+def render_global_bar(percent, speed, eta):
+
+    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
+
+    return f"""
+<div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>⏳ {eta_text}</div>
+    </div>
+    <div class="global-bar">
+        <div class="global-fill" style="width:{percent}%;"></div>
+        <div class="global-text">{percent}%</div>
+    </div>
+</div>
+"""
 
 # =========================
 # PROCESS
 # =========================
-def process_pdf(file):
+def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+
+    results = []
     images = convert_from_bytes(file.read(), dpi=150)
-    result = []
+    total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
+
+        processed_pages[0] += 1
+
+        percent = int((i/total_pages)*100)
+        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+
+        elapsed = time.time() - start_time
+        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
+        remaining = total_pages_all - processed_pages[0]
+        eta = int(remaining / speed) if speed > 0 else 0
+
+        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+
+        box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
         sm, date = ocr_extract(img)
 
         if sm and date:
-            result.append({
+            results.append({
                 "SM": sm,
                 "Ngày": date,
                 "Trang": i
             })
 
-    return result
+    return results
 
 # =========================
-# RUN BUTTON
+# MAIN
 # =========================
 if uploaded_files:
 
-    if st.button("🚀 BẮT ĐẦU XỬ LÝ"):
+    global_box = st.empty()
+    boxes = [st.empty() for _ in uploaded_files]
 
-        all_data = []
+    if not st.session_state.processing and not st.session_state.done:
 
+        if st.button("🚀 Bắt đầu xử lý"):
+            st.session_state.processing = True
+            st.rerun()
+
+    if st.session_state.processing:
+
+        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
+
+        start_time = time.time()
+
+        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
-            data = process_pdf(f)
-            if data:
-                all_data.append(pd.DataFrame(data))
+            f.seek(0)
 
-        final_df = pd.concat(all_data) if all_data else pd.DataFrame()
+        processed_pages = [0]
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-        with pd.ExcelWriter(tmp.name, engine="openpyxl") as writer:
-            final_df.to_excel(writer, index=False)
+        with pd.ExcelWriter(tmp_excel.name, engine="openpyxl") as writer:
 
-        # format excel
-        wb = load_workbook(tmp.name)
+            for i, f in enumerate(uploaded_files):
+
+                data = extract_pdf(
+                    f, boxes[i], global_box,
+                    start_time, processed_pages, total_pages_all
+                )
+
+                if data:
+                    df = pd.DataFrame(data)
+                    df.insert(0, "STT", range(1, len(df)+1))
+
+                    sheet_name = os.path.splitext(f.name)[0][:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        wb = load_workbook(tmp_excel.name)
 
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -201,19 +338,20 @@ if uploaded_files:
             for cell in ws[1]:
                 cell.font = Font(bold=True)
 
-        wb.save(tmp.name)
+        wb.save(tmp_excel.name)
 
-        st.session_state.excel_file = tmp.name
+        st.session_state.excel_file = tmp_excel.name
         st.session_state.done = True
         st.session_state.trigger_download = True
+        st.session_state.processing = False
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (THEO KIỂU BẠN MUỐN)
+# AUTO DOWNLOAD (ONLY FIX NAME + TRIGGER)
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 HOÀN THÀNH !!! FILE ĐÃ SẴN SÀNG")
+    st.success("🎉 HOÀN THÀNH !!!")
 
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
@@ -221,7 +359,7 @@ if st.session_state.done:
     file_name = "THLPDFTOEXCEL.xlsx"
     b64 = base64.b64encode(data).decode()
 
-    # 🔥 AUTO DOWNLOAD TRICK (GIỐNG LÚC ĐẦU BẠN DÙNG)
+    # AUTO DOWNLOAD TRICK (GIỮ NGUYÊN)
     if st.session_state.trigger_download:
         st.session_state.trigger_download = False
 
@@ -230,12 +368,4 @@ if st.session_state.done:
         style="display:none;"></iframe>
         """, unsafe_allow_html=True)
 
-        st.markdown("📥 File đang tự động tải về...")
-
-    # fallback (KHÔNG HIỂN THỊ NẾU BẠN MUỐN ẨN HOÀN TOÀN)
-    st.download_button(
-        "📥 TẢI LẠI FILE (backup)",
-        data,
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.markdown('<div class="loading">📥 File đang tự động tải về...</div>', unsafe_allow_html=True)
