@@ -162,9 +162,9 @@ div.stButton > button:hover {
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER
+# HEADER (ĐỔI ICON PDF)
 # =========================
-st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📄 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -213,7 +213,7 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
 
@@ -305,9 +305,10 @@ if uploaded_files:
 
         processed_pages = [0]
 
-        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        # ✅ ĐỔI TÊN FILE
+        tmp_excel_path = os.path.join(tempfile.gettempdir(), "THLPDFTOEXCEL.xlsx")
 
-        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
+        with pd.ExcelWriter(tmp_excel_path, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
 
@@ -324,7 +325,7 @@ if uploaded_files:
 
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        wb = load_workbook(tmp_excel.name)
+        wb = load_workbook(tmp_excel_path)
 
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -341,9 +342,9 @@ if uploaded_files:
             for cell in ws[1]:
                 cell.font = Font(bold=True)
 
-        wb.save(tmp_excel.name)
+        wb.save(tmp_excel_path)
 
-        st.session_state.excel_file = tmp_excel.name
+        st.session_state.excel_file = tmp_excel_path
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
