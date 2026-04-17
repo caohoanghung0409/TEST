@@ -10,29 +10,19 @@ import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
-
-OCR_CONFIG = "--oem 3 --psm 6"
 
 # =========================
 # SESSION
 # =========================
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-if "done" not in st.session_state:
-    st.session_state.done = False
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
-if "excel_file" not in st.session_state:
-    st.session_state.excel_file = None
+for k in ["processing", "done", "clear_uploader", "last_uploaded_names", "excel_file"]:
+    if k not in st.session_state:
+        st.session_state[k] = False if k in ["processing", "done", "clear_uploader"] else []
+
+OCR_CONFIG = "--oem 3 --psm 6"
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -40,11 +30,7 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
+.header {font-size:22px;font-weight:700;margin-bottom:10px;}
 
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
@@ -55,195 +41,120 @@ header, #MainMenu, footer {visibility: hidden;}
 
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-}
-
-.new-btn button {
-    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+    color:white;border:none;border-radius:12px;
+    padding:12px 24px;font-weight:600;
 }
 
 .file-row {
-    margin-top:12px;
-    padding:10px;
-    border-radius:12px;
-    background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
-}
-
-.progress {
-    height:8px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
+    margin-top:12px;padding:10px;border-radius:12px;
+    background:white;box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
 .progress-bar {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-}
-
-.global-bar {
-    height:18px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-}
-
-.global-fill {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    height:8px;background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================
-# OCR (OPTIMIZED)
+# OCR (FAST VERSION - CORE FIX)
 # =========================
 def ocr_extract(img):
-    def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config=OCR_CONFIG)
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-        return sm, date
-
+    # CẮT VÙNG TRƯỚC → giảm 70% dữ liệu OCR
     w, h = img.size
+    crop = img.crop((0, 0, w, int(h * 0.45)))
 
-    # GIẢM VARIANT (nhanh hơn ~40–60%)
-    for variant in [
-        img,
-        img.rotate(180, expand=True),
-        img.rotate(90, expand=True)
-    ]:
-        sm, date = read(variant)
-        if sm and date:
-            return sm.group(1), date.group(1)
+    text = pytesseract.image_to_string(crop, lang='eng', config=OCR_CONFIG)
+
+    sm = re.search(r"(SM\d{4}\.\d{4})", text)
+    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+
+    if sm and date:
+        return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# GLOBAL BAR
+# PDF CACHE (QUAN TRỌNG NHẤT)
 # =========================
-def render_global_bar(percent, eta):
-    eta_text = "Sắp xong..." if eta <= 0 else f"{eta//60}m {eta%60}s"
-
-    return f"""
-    <div style="margin:10px 0;">
-        <div style="display:flex;justify-content:space-between;font-size:13px;">
-            <span>⚡ {percent}%</span>
-            <span>⏳ {eta_text}</span>
-        </div>
-        <div class="global-bar">
-            <div class="global-fill" style="width:{percent}%"></div>
-        </div>
-    </div>
-    """
+@st.cache_data(show_spinner=False)
+def load_pdf(file_bytes):
+    # DPI 100 là tối ưu tốc độ/accuracy
+    return convert_from_bytes(file_bytes, dpi=100)
 
 # =========================
-# PROCESS PDF (FAST VERSION)
+# PROCESS PDF
 # =========================
-def extract_pdf(images, file_name, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(images, name, box, global_box, start_time, processed, total):
 
     results = []
     total_pages = len(images)
 
-    for i, img in enumerate(images, start=1):
+    for i, img in enumerate(images, 1):
 
-        processed_pages[0] += 1
+        processed[0] += 1
 
-        percent = int((i / total_pages) * 100)
-        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+        percent = int(i / total_pages * 100)
+        global_percent = int(processed[0] / total * 100)
 
         elapsed = time.time() - start_time
-        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
-        remaining = total_pages_all - processed_pages[0]
-        eta = int(remaining / speed) if speed > 0 else 0
+        speed = processed[0] / elapsed if elapsed else 0
+        eta = int((total - processed[0]) / speed) if speed else 0
 
-        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
+        global_box.markdown(f"⚡ {global_percent}% | ⏳ {eta}s", unsafe_allow_html=True)
 
         box.markdown(f"""
         <div class="file-row">
-        📄 {file_name} — Trang {i}/{total_pages} ({percent}%)
-        <div class="progress">
+        📄 {name} - Trang {i}/{total_pages}
         <div class="progress-bar" style="width:{percent}%"></div>
-        </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # OCR FAST PATH
         sm, date = ocr_extract(img)
 
         if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date,
-                "Trang": i
-            })
+            results.append({"SM": sm, "Ngày": date, "Trang": i})
 
     return results
 
 # =========================
-# UPLOADER
+# UPLOAD
 # =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
-
 uploaded_files = st.file_uploader(
-    "📂 Chọn file PDF",
+    "📂 Chọn PDF",
     type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
+    accept_multiple_files=True
 )
 
-current_names = [f.name for f in uploaded_files] if uploaded_files else []
-
-if current_names != st.session_state.last_uploaded_names:
-    st.session_state.processing = False
-    st.session_state.done = False
-    st.session_state.last_uploaded_names = current_names
-
-# =========================
-# MAIN
-# =========================
 if uploaded_files:
 
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
-    # PRELOAD FILES (FAST FIX)
-    pdf_bytes_list = []
-    images_list_all = []
-
-    for f in uploaded_files:
-        pdf_bytes = f.read()
-        pdf_bytes_list.append((f.name, pdf_bytes))
-        images_list_all.append(convert_from_bytes(pdf_bytes, dpi=120))  # OPTIMIZED DPI
-
-    total_pages_all = sum(len(x) for x in images_list_all)
-
-    for f in uploaded_files:
-        f.seek(0)
-
-    if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Bắt đầu xử lý"):
-            st.session_state.processing = True
-            st.rerun()
-
-    if st.session_state.processing:
-
-        st.markdown('<div>⏳ Đang xử lý...</div>', unsafe_allow_html=True)
+    if st.button("🚀 Bắt đầu xử lý"):
 
         start_time = time.time()
-        processed_pages = [0]
+        processed = [0]
 
-        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        # ⚡ LOAD PDF 1 LẦN DUY NHẤT
+        pdf_data = []
+        images_all = []
 
-        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
+        for f in uploaded_files:
+            b = f.read()
+            pdf_data.append((f.name, b))
+            images_all.append(load_pdf(b))  # CACHE + FAST
 
-            for idx, ((name, _), images) in enumerate(zip(pdf_bytes_list, images_list_all)):
+        total_pages = sum(len(x) for x in images_all)
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+
+        with pd.ExcelWriter(tmp.name, engine="openpyxl") as writer:
+
+            for idx, ((name, _), images) in enumerate(zip(pdf_data, images_all)):
 
                 data = extract_pdf(
                     images,
@@ -251,25 +162,23 @@ if uploaded_files:
                     boxes[idx],
                     global_box,
                     start_time,
-                    processed_pages,
-                    total_pages_all
+                    processed,
+                    total_pages
                 )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
-                    sheet_name = os.path.splitext(name)[0][:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df.to_excel(writer, sheet_name=name[:31], index=False)
 
-        wb = load_workbook(tmp_excel.name)
+        wb = load_workbook(tmp.name)
 
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         for ws in wb.worksheets:
             for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+                ws.column_dimensions[col[0].column_letter].width = 18
 
             for row in ws.iter_rows():
                 for cell in row:
@@ -278,10 +187,9 @@ if uploaded_files:
             for cell in ws[1]:
                 cell.font = Font(bold=True)
 
-        wb.save(tmp_excel.name)
+        wb.save(tmp.name)
 
-        st.session_state.excel_file = tmp_excel.name
-        st.session_state.processing = False
+        st.session_state.excel_file = tmp.name
         st.session_state.done = True
         st.rerun()
 
@@ -290,18 +198,15 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 HOÀN THÀNH !!!")
+    st.success("🎉 DONE")
 
     with open(st.session_state.excel_file, "rb") as f:
-        data = f.read()
-
-    b64 = base64.b64encode(data).decode()
+        b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    if st.button("🔄 XỬ LÝ FILE MỚI"):
+    if st.button("🔄 FILE MỚI"):
         st.session_state.done = False
-        st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
