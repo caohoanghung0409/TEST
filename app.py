@@ -39,16 +39,9 @@ header, #MainMenu, footer {visibility: hidden;}
 .stApp { background: #f1f5f9; }
 
 .header {
-    display:flex;
-    align-items:center;
-    gap:10px;
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
-}
-
-.header img {
-    width:30px;
 }
 
 [data-testid="stFileUploader"] {
@@ -123,6 +116,26 @@ div.stButton > button:hover {
     transition: width 0.4s ease;
 }
 
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
+
 .global-text {
     position:absolute;
     width:100%;
@@ -139,18 +152,19 @@ div.stButton > button:hover {
     font-size:13px;
     margin-bottom:6px;
 }
+
+.loading {
+    font-size:14px;
+    color:#475569;
+    margin-top:10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER (ICON PDF ĐỎ)
+# HEADER
 # =========================
-st.markdown("""
-<div class="header">
-    <img src="https://cdn-icons-png.flaticon.com/512/337/337946.png">
-    THL PDF → EXCEL
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -175,6 +189,7 @@ if current_names != st.session_state.last_uploaded_names:
 # OCR
 # =========================
 def ocr_extract(img):
+
     def read(image):
         text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
@@ -187,6 +202,7 @@ def ocr_extract(img):
         img,
         img.crop((0,0,w,int(h*0.4))),
         img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]:
@@ -197,18 +213,20 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR
+# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
 # =========================
-def render_global_bar(percent, eta):
+def render_global_bar(percent, speed, eta):
+
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
+
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
-        <div>{percent}%</div>
-        <div>{eta_text}</div>
+        <div>⚡ {percent}%</div>
+        <div>⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%"></div>
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
@@ -235,7 +253,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
+        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
@@ -277,6 +295,8 @@ if uploaded_files:
 
     if st.session_state.processing:
 
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
+
         start_time = time.time()
 
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
@@ -299,26 +319,54 @@ if uploaded_files:
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
-                    df.to_excel(writer, sheet_name=f.name[:31], index=False)
+
+                    sheet_name = os.path.splitext(f.name)[0][:31]
+
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
+
+        thin = Side(style='thin')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        for ws in wb.worksheets:
+            for col in ws.columns:
+                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.border = border
+
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+
         wb.save(tmp_excel.name)
 
-        # AUTO DOWNLOAD + RENAME
-        with open(tmp_excel.name, "rb") as f:
-            data = f.read()
+        st.session_state.excel_file = tmp_excel.name
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
-        b64 = base64.b64encode(data).decode()
+# =========================
+# DOWNLOAD
+# =========================
+if st.session_state.done:
 
-        st.markdown(f"""
-<script>
-const link = document.createElement('a');
-link.href = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}";
-link.download = "THLPDFTOEXCEL.xlsx";
-document.body.appendChild(link);
-link.click();
-document.body.removeChild(link);
-</script>
-""", unsafe_allow_html=True)
+    st.success("🎉 HOÀN THÀNH !!!")
 
-        st.success("🎉 HOÀN THÀNH & ĐÃ TẢI FILE!")
+    with open(st.session_state.excel_file, "rb") as f:
+        data = f.read()
+
+    b64 = base64.b64encode(data).decode()
+
+    st.markdown(f"""
+        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
