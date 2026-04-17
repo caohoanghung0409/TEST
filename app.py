@@ -7,7 +7,6 @@ import tempfile
 import os
 import time
 import base64
-import threading
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -29,11 +28,9 @@ if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
 if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
-if "start_time" not in st.session_state:
-    st.session_state.start_time = 0
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN 100%)
+# STYLE PRO MAX (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -170,18 +167,6 @@ div.stButton > button:hover {
 st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
-# REALTIME TIMER
-# =========================
-def realtime_timer(box):
-    while st.session_state.processing:
-        elapsed = int(time.time() - st.session_state.start_time)
-        box.markdown(
-            f"<div style='font-size:14px;margin-top:5px;'>⏱ {elapsed//60}m {elapsed%60:02d}s</div>",
-            unsafe_allow_html=True
-        )
-        time.sleep(1)
-
-# =========================
 # UPLOADER
 # =========================
 uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
@@ -215,9 +200,9 @@ def ocr_extract(img):
 
     for variant in [
         img,
-        img.crop((0,0,w,int(h*0.4))),
+        img.crop((0, 0, w, int(h * 0.4))),
         img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.4))),
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]:
@@ -228,14 +213,18 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (GIỮ NGUYÊN + ETA)
+# GLOBAL BAR (FIX REALTIME)
 # =========================
-def render_global_bar(percent, eta):
+def render_global_bar(percent, elapsed, eta):
+
+    elapsed_text = f"{int(elapsed)//60}m {int(elapsed)%60:02d}s"
+    eta_text = "..." if eta == 0 else f"{eta}s"
+
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>⏳ {eta}s</div>
+        <div>⏱ {elapsed_text} • ⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
@@ -265,7 +254,10 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
+        global_box.markdown(
+            render_global_bar(global_percent, elapsed, eta),
+            unsafe_allow_html=True
+        )
 
         box.markdown(f"""
 <div class="file-row">
@@ -292,7 +284,6 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 # =========================
 if uploaded_files:
 
-    time_box = st.empty()
     global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
@@ -302,18 +293,15 @@ if uploaded_files:
 
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
-            st.session_state.start_time = time.time()
             st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
 
-        threading.Thread(target=realtime_timer, args=(time_box,), daemon=True).start()
-
         st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
-        start_time = st.session_state.start_time
+        start_time = time.time()
 
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
