@@ -34,7 +34,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN)
+# STYLE FULL (KHÔNG CẮT)
 # =========================
 st.markdown("""
 <style>
@@ -42,14 +42,12 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-/* header */
 .header {
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
 }
 
-/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
@@ -61,7 +59,6 @@ header, #MainMenu, footer {visibility: hidden;}
     border-color:#3b82f6;
 }
 
-/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -71,25 +68,20 @@ div.stButton > button {
     font-weight:600;
     font-size:15px;
     box-shadow:0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.25s ease;
 }
 div.stButton > button:hover {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow:0 8px 20px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
 }
 
-/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
-/* spacing */
 .process-btn {
     margin-top: 25px;
     margin-bottom: 15px;
 }
 
-/* file row */
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -98,7 +90,6 @@ div.stButton > button:hover {
     box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
-/* progress */
 .progress {
     height:8px;
     background:#e5e7eb;
@@ -109,10 +100,8 @@ div.stButton > button:hover {
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
 }
 
-/* global */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -120,33 +109,11 @@ div.stButton > button:hover {
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
-    overflow:hidden;
 }
 
 .global-fill {
     height:100%;
     border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -166,7 +133,6 @@ div.stButton > button:hover {
     margin-bottom:6px;
 }
 
-/* loading text */
 .loading {
     font-size:14px;
     color:#475569;
@@ -260,11 +226,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         sm, date = process_page(img)
         if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date,
-                "Trang": i
-            })
+            results.append({"SM": sm, "Ngày": date, "Trang": i})
 
     return results
 
@@ -296,8 +258,6 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
-
         start_time = time.time()
 
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
@@ -320,9 +280,7 @@ if uploaded_files:
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
-
-                    sheet_name = clean_sheet_name(f.name)
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df.to_excel(writer, sheet_name=clean_sheet_name(f.name), index=False)
 
         wb = load_workbook(tmp_excel.name)
 
@@ -350,7 +308,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (FINAL FIX)
 # =========================
 if st.session_state.done:
 
@@ -362,12 +320,14 @@ if st.session_state.done:
     b64 = base64.b64encode(data).decode()
 
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" 
+           download="THLPDFTOEXCEL.xlsx"></a>
+        <script>
+            document.querySelector('a[download]').click();
+        </script>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
