@@ -55,50 +55,68 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR xoay 4 hướng
+# OCR SMART (FIX CHÍNH)
 # =========================
-def process_page_multi_angle(img):
-    angles = [0, 90, 180, 270]
+def ocr_extract(img):
 
-    for angle in angles:
-        rotated = img.rotate(angle, expand=True)
-
-        # crop 40% phía trên
-        w, h = rotated.size
-        cropped = rotated.crop((0, 0, w, int(h * 0.4)))
-
+    def read(image):
         text = pytesseract.image_to_string(
-            cropped,
+            image,
             lang='eng',
             config='--oem 3 --psm 6'
         )
-
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        return sm, date
 
-        if sm and date:
-            return sm.group(1), date.group(1)
+    w, h = img.size
+
+    # 1. Ảnh gốc FULL
+    sm, date = read(img)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # 2. Ảnh gốc crop
+    crop = img.crop((0, 0, w, int(h * 0.4)))
+    sm, date = read(crop)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # 3. Xoay 180 FULL
+    img180 = img.rotate(180, expand=True)
+    sm, date = read(img180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # 4. Xoay 180 crop
+    w2, h2 = img180.size
+    crop180 = img180.crop((0, 0, w2, int(h2 * 0.4)))
+    sm, date = read(crop180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # 5. Xoay 90 crop
+    img90 = img.rotate(90, expand=True)
+    w3, h3 = img90.size
+    crop90 = img90.crop((0, 0, w3, int(h3 * 0.4)))
+    sm, date = read(crop90)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # 6. Xoay 270 crop
+    img270 = img.rotate(270, expand=True)
+    w4, h4 = img270.size
+    crop270 = img270.crop((0, 0, w4, int(h4 * 0.4)))
+    sm, date = read(crop270)
+    if sm and date:
+        return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# GLOBAL BAR
-# =========================
-def render_global_bar(percent):
-    return f"""
-<div style="margin:10px 0;">
-    <div style="background:#ddd;border-radius:10px;overflow:hidden;">
-        <div style="width:{percent}%;background:#4CAF50;color:white;text-align:center;">
-            {percent}%
-        </div>
-    </div>
-</div>
-"""
-
-# =========================
 # PROCESS PDF
 # =========================
-def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file, box):
 
     results = []
 
@@ -107,15 +125,9 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
     for i, img in enumerate(images, start=1):
 
-        processed_pages[0] += 1
-
-        global_percent = int((processed_pages[0] / total_pages_all) * 100)
-        global_box.markdown(render_global_bar(global_percent), unsafe_allow_html=True)
-
         box.write(f"📄 {file.name} - Trang {i}/{total_pages}")
 
-        # FIX CHÍNH Ở ĐÂY
-        sm, date = process_page_multi_angle(img)
+        sm, date = ocr_extract(img)
 
         if sm and date:
             results.append({
@@ -139,7 +151,6 @@ def clean_sheet_name(name):
 # =========================
 if uploaded_files:
 
-    global_box = st.empty()
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
@@ -149,24 +160,13 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        start_time = time.time()
-
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
-        for f in uploaded_files:
-            f.seek(0)
-
-        processed_pages = [0]
-
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(
-                    f, boxes[i], global_box,
-                    start_time, processed_pages, total_pages_all
-                )
+                data = extract_pdf(f, boxes[i])
 
                 if data:
                     df = pd.DataFrame(data)
