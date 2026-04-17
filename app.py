@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN)
+# STYLE PRO MAX (GIỮ NGUYÊN 100%)
 # =========================
 st.markdown("""
 <style>
@@ -186,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR FIX (GIỮ NGUYÊN)
 # =========================
 def ocr_extract(img):
 
@@ -198,26 +198,49 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    for variant in [
-        img,
-        img.crop((0, 0, w, int(h * 0.4))),
-        img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.4))),
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True)
-    ]:
-        sm, date = read(variant)
-        if sm and date:
-            return sm.group(1), date.group(1)
+    sm, date = read(img)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    crop = img.crop((0, 0, w, int(h * 0.4)))
+    sm, date = read(crop)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    img180 = img.rotate(180, expand=True)
+    sm, date = read(img180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    w2, h2 = img180.size
+    crop180 = img180.crop((0, 0, w2, int(h2 * 0.4)))
+    sm, date = read(crop180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    img90 = img.rotate(90, expand=True)
+    w3, h3 = img90.size
+    crop90 = img90.crop((0, 0, w3, int(h3 * 0.4)))
+    sm, date = read(crop90)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    img270 = img.rotate(270, expand=True)
+    w4, h4 = img270.size
+    crop270 = img270.crop((0, 0, w4, int(h4 * 0.4)))
+    sm, date = read(crop270)
+    if sm and date:
+        return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# GLOBAL BAR (FIX REALTIME)
+# GLOBAL BAR (FIX TIMER)
 # =========================
-def render_global_bar(percent, elapsed, eta):
+def render_global_bar(percent, speed, eta, start_time):
 
-    elapsed_text = f"{int(elapsed)//60}m {int(elapsed)%60:02d}s"
+    elapsed = int(time.time() - start_time)
+    elapsed_text = f"{elapsed//60}m {elapsed%60:02d}s"
     eta_text = "..." if eta == 0 else f"{eta}s"
 
     return f"""
@@ -234,7 +257,7 @@ def render_global_bar(percent, elapsed, eta):
 """
 
 # =========================
-# PROCESS
+# PROCESS PDF
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
@@ -255,7 +278,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         eta = int(remaining / speed) if speed > 0 else 0
 
         global_box.markdown(
-            render_global_bar(global_percent, elapsed, eta),
+            render_global_bar(global_percent, speed, eta, start_time),
             unsafe_allow_html=True
         )
 
