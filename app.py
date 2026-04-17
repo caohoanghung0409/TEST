@@ -6,6 +6,7 @@ import re
 import tempfile
 import os
 import time
+import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -19,12 +20,16 @@ st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 # =========================
 if "processing" not in st.session_state:
     st.session_state.processing = False
+
 if "done" not in st.session_state:
     st.session_state.done = False
+
 if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
+
 if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
+
 if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
@@ -37,12 +42,14 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
+/* header */
 .header {
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
 }
 
+/* uploader */
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
@@ -54,6 +61,7 @@ header, #MainMenu, footer {visibility: hidden;}
     border-color:#3b82f6;
 }
 
+/* button PRO */
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
@@ -70,15 +78,18 @@ div.stButton > button:hover {
     box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
+/* new button */
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
 }
 
+/* spacing */
 .process-btn {
     margin-top: 25px;
     margin-bottom: 15px;
 }
 
+/* file row */
 .file-row {
     margin-top:12px;
     padding:10px;
@@ -87,6 +98,7 @@ div.stButton > button:hover {
     box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
+/* progress */
 .progress {
     height:8px;
     background:#e5e7eb;
@@ -100,6 +112,7 @@ div.stButton > button:hover {
     transition: width 0.3s ease;
 }
 
+/* global */
 .global-wrap { margin:15px 0; }
 
 .global-bar {
@@ -153,6 +166,7 @@ div.stButton > button:hover {
     margin-bottom:6px;
 }
 
+/* loading text */
 .loading {
     font-size:14px;
     color:#475569;
@@ -234,10 +248,10 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         box.markdown(f"""
 <div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
+    📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+    <div class="progress">
+        <div class="progress-bar" style="width:{percent}%"></div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -336,7 +350,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (FIX CHUẨN)
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
@@ -345,15 +359,11 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    # 👉 CHỈNH TÊN FILE Ở ĐÂY
-    file_name = f"THL_Output_{time.strftime('%Y%m%d_%H%M%S')}.xlsx"
+    b64 = base64.b64encode(data).decode()
 
-    st.download_button(
-        label="⬇️ Tải file Excel",
-        data=data,
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.markdown(f"""
+        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
