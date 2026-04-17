@@ -28,11 +28,9 @@ if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
 if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
-if "trigger_download" not in st.session_state:
-    st.session_state.trigger_download = False
 
 # =========================
-# STYLE (GIỮ NGUYÊN 100% GIAO DIỆN GỐC)
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -166,7 +164,7 @@ div.stButton > button:hover {
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -188,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (GIỮ NGUYÊN)
+# OCR
 # =========================
 def ocr_extract(img):
 
@@ -215,7 +213,7 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR
+# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
 # =========================
 def render_global_bar(percent, speed, eta):
 
@@ -228,7 +226,7 @@ def render_global_bar(percent, speed, eta):
         <div>⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%;"></div>
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
@@ -287,13 +285,17 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
+        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
+
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
+        st.markdown('</div>', unsafe_allow_html=True)
+
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -305,7 +307,7 @@ if uploaded_files:
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-        with pd.ExcelWriter(tmp_excel.name, engine="openpyxl") as writer:
+        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
 
@@ -319,6 +321,7 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
+
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
@@ -341,13 +344,12 @@ if uploaded_files:
         wb.save(tmp_excel.name)
 
         st.session_state.excel_file = tmp_excel.name
-        st.session_state.done = True
-        st.session_state.trigger_download = True
         st.session_state.processing = False
+        st.session_state.done = True
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (ONLY CHANGE FILE NAME)
+# DOWNLOAD
 # =========================
 if st.session_state.done:
 
@@ -358,17 +360,13 @@ if st.session_state.done:
 
     b64 = base64.b64encode(data).decode()
 
-    # CHỈ ĐỔI TÊN FILE Ở ĐÂY
-    download_filename = "THLPDFTOEXCEL.xlsx"
+    st.markdown(f"""
+        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
 
-    if st.session_state.trigger_download:
-        st.session_state.trigger_download = False
-
-        st.markdown(f"""
-        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-           download="{download_filename}">
-           <span style="display:none;"></span>
-        </a>
-        """, unsafe_allow_html=True)
-
-        st.markdown('<div class="loading">📥 File đang tự động tải về...</div>', unsafe_allow_html=True)
+    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
