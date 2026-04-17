@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE
+# STYLE (KHÔI PHỤC FULL GIAO DIỆN CŨ)
 # =========================
 st.markdown("""
 <style>
@@ -49,6 +49,10 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -58,10 +62,21 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
+    font-size:15px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
 }
 
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 15px;
 }
 
 .file-row {
@@ -77,25 +92,48 @@ div.stButton > button {
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
+    margin-top:6px;
 }
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
+    transition: width 0.3s ease;
 }
 
 .global-wrap { margin:15px 0; }
 
 .global-bar {
+    position:relative;
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
-    position:relative;
 }
 
 .global-fill {
     height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    border-radius:999px;
+    transition: width 0.4s ease;
+}
+
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -105,11 +143,20 @@ div.stButton > button {
     font-size:12px;
     font-weight:700;
     top:0;
+    line-height:20px;
+}
+
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:13px;
+    margin-bottom:6px;
 }
 
 .loading {
     font-size:14px;
     color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -117,7 +164,7 @@ div.stButton > button {
 # =========================
 # HEADER
 # =========================
-st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -166,16 +213,21 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR
+# GLOBAL BAR (GIỮ NGUYÊN UI)
 # =========================
 def render_global_bar(percent, speed, eta):
+
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
 
     return f"""
 <div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>⏳ {eta_text}</div>
+    </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%"></div>
-        <div class="global-text">{percent}% | ⏳ {eta_text}</div>
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+        <div class="global-text">{percent}%</div>
     </div>
 </div>
 """
@@ -239,7 +291,7 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -292,7 +344,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD (FIX 100%)
+# DOWNLOAD (AUTO + FIX NAME + GIỮ UI)
 # =========================
 if st.session_state.done:
 
@@ -301,14 +353,23 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    # ✅ FIX TÊN FILE CHẮC CHẮN
-    st.download_button(
-        label="📥 TẢI FILE EXCEL",
-        data=data,
-        file_name="THLPDFTOEXCEL.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_fixed"
-    )
+    file_name = "THLPDFTOEXCEL.xlsx"
+
+    b64 = base64.b64encode(data).decode()
+
+    # ✅ AUTO DOWNLOAD (KHÔNG CẦN BẤM)
+    st.markdown(f"""
+        <a id="download_link"
+           href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+           download="{file_name}">
+        </a>
+
+        <script>
+            document.getElementById('download_link').click();
+        </script>
+    """, unsafe_allow_html=True)
+
+    st.info("📥 File đang tự động tải về...")
 
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
