@@ -8,7 +8,7 @@ import os
 import time
 import base64
 from openpyxl import load_workbook
-from openpyxl.styles import Border, Side, Font
+from openpyxl.styles import Border, Side, Font, PatternFill
 
 # =========================
 # CONFIG
@@ -213,7 +213,7 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
 
@@ -321,7 +321,6 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
@@ -329,7 +328,11 @@ if uploaded_files:
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
+        # ====== MÀU HEADER MỚI ======
+        header_fill = PatternFill(start_color="FABF8F", end_color="FABF8F", fill_type="solid")
+
         for ws in wb.worksheets:
+
             for col in ws.columns:
                 max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                 ws.column_dimensions[col[0].column_letter].width = max_len + 3
@@ -338,8 +341,10 @@ if uploaded_files:
                 for cell in row:
                     cell.border = border
 
+            # HEADER STYLE (đã chỉnh màu)
             for cell in ws[1]:
                 cell.font = Font(bold=True)
+                cell.fill = header_fill
 
         wb.save(tmp_excel.name)
 
