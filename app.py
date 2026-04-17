@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -42,6 +42,121 @@ header, #MainMenu, footer {visibility: hidden;}
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
+}
+
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+    font-size:15px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
+}
+
+.new-btn button {
+    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 15px;
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
+}
+
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:6px;
+}
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+    transition: width 0.3s ease;
+}
+
+.global-wrap { margin:15px 0; }
+
+.global-bar {
+    position:relative;
+    height:20px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+}
+
+.global-fill {
+    height:100%;
+    border-radius:999px;
+    transition: width 0.4s ease;
+}
+
+.global-fill::before {
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.2) 0,
+        rgba(255,255,255,0.2) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: move 1s linear infinite;
+}
+
+@keyframes move {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
+
+.global-text {
+    position:absolute;
+    width:100%;
+    text-align:center;
+    font-size:12px;
+    font-weight:700;
+    top:0;
+    line-height:20px;
+}
+
+.global-meta {
+    display:flex;
+    justify-content:space-between;
+    font-size:13px;
+    margin-bottom:6px;
+}
+
+.loading {
+    font-size:14px;
+    color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -83,50 +198,69 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    sm, date = read(img)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    crop = img.crop((0, 0, w, int(h * 0.4)))
-    sm, date = read(crop)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img180 = img.rotate(180, expand=True)
-    sm, date = read(img180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    w2, h2 = img180.size
-    crop180 = img180.crop((0, 0, w2, int(h2 * 0.4)))
-    sm, date = read(crop180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img90 = img.rotate(90, expand=True)
-    w3, h3 = img90.size
-    crop90 = img90.crop((0, 0, w3, int(h3 * 0.4)))
-    sm, date = read(crop90)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    img270 = img.rotate(270, expand=True)
-    w4, h4 = img270.size
-    crop270 = img270.crop((0, 0, w4, int(h4 * 0.4)))
-    sm, date = read(crop270)
-    if sm and date:
-        return sm.group(1), date.group(1)
+    for variant in [
+        img,
+        img.crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True)
+    ]:
+        sm, date = read(variant)
+        if sm and date:
+            return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# PROCESS PDF
+# GLOBAL BAR
 # =========================
-def extract_pdf(file):
+def render_global_bar(percent, speed, eta):
+    return f"""
+<div class="global-wrap">
+    <div class="global-meta">
+        <div>⚡ {percent}%</div>
+        <div>🚀 {speed:.2f} pages/s • ⏳ {eta}s</div>
+    </div>
+    <div class="global-bar">
+        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+        <div class="global-text">{percent}%</div>
+    </div>
+</div>
+"""
+
+# =========================
+# PROCESS
+# =========================
+def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
+    total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
+
+        processed_pages[0] += 1
+
+        percent = int((i/total_pages)*100)
+        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+
+        elapsed = time.time() - start_time
+        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
+        remaining = total_pages_all - processed_pages[0]
+        eta = int(remaining / speed) if speed > 0 else 0
+
+        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+
+        box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
         sm, date = ocr_extract(img)
 
         if sm and date:
@@ -143,27 +277,47 @@ def extract_pdf(file):
 # =========================
 if uploaded_files:
 
+    global_box = st.empty()
+    boxes = [st.empty() for _ in uploaded_files]
+
     if not st.session_state.processing and not st.session_state.done:
+
+        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
 
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
+        st.markdown('</div>', unsafe_allow_html=True)
+
     if st.session_state.processing:
+
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
+
+        start_time = time.time()
+
+        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+        for f in uploaded_files:
+            f.seek(0)
+
+        processed_pages = [0]
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-            for f in uploaded_files:
+            for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(f)
+                data = extract_pdf(
+                    f, boxes[i], global_box,
+                    start_time, processed_pages, total_pages_all
+                )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    # ✅ CHỈNH DUY NHẤT Ở ĐÂY
+                    # ✅ CHỈ SỬA DUY NHẤT
                     sheet_name = os.path.splitext(f.name)[0][:31]
 
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -208,7 +362,9 @@ if st.session_state.done:
         <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
+    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
