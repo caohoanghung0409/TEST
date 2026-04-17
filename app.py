@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (GIỮ NGUYÊN 100%)
+# STYLE PRO MAX (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -235,25 +235,43 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (FIX TIMER)
+# GLOBAL BAR (JS TIMER MƯỢT)
 # =========================
-def render_global_bar(percent, speed, eta, start_time):
-
-    elapsed = int(time.time() - start_time)
-    elapsed_text = f"{elapsed//60}m {elapsed%60:02d}s"
-    eta_text = "..." if eta == 0 else f"{eta}s"
+def render_global_bar(percent, eta, start_time):
 
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>⏱ {elapsed_text} • ⏳ {eta_text}</div>
+        <div>
+            ⏱ <span id="timer">0m 00s</span> • ⏳ {eta}s
+        </div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
         <div class="global-text">{percent}%</div>
     </div>
 </div>
+
+<script>
+const startTime = {int(start_time * 1000)};
+
+function updateTimer() {{
+    const now = new Date().getTime();
+    const diff = Math.floor((now - startTime) / 1000);
+
+    const m = Math.floor(diff / 60);
+    const s = diff % 60;
+
+    const text = m + "m " + (s < 10 ? "0" : "") + s + "s";
+
+    const el = document.getElementById("timer");
+    if (el) el.innerText = text;
+}}
+
+setInterval(updateTimer, 1000);
+updateTimer();
+</script>
 """
 
 # =========================
@@ -278,7 +296,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         eta = int(remaining / speed) if speed > 0 else 0
 
         global_box.markdown(
-            render_global_bar(global_percent, speed, eta, start_time),
+            render_global_bar(global_percent, eta, start_time),
             unsafe_allow_html=True
         )
 
