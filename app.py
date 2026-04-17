@@ -16,11 +16,6 @@ from openpyxl.styles import Border, Side, Font
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
-# ICON PDF (NHÚNG TRỰC TIẾP)
-# =========================
-pdf_icon = "iVBORw0KGgoAAAANSUhEUgAA..."  # ⚠️ bạn dán base64 icon vào đây nếu cần (hiện đang rút gọn)
-
-# =========================
 # SESSION
 # =========================
 if "processing" not in st.session_state:
@@ -53,7 +48,7 @@ header, #MainMenu, footer {visibility: hidden;}
 }
 
 .header img {
-    width:28px;
+    width:30px;
 }
 
 [data-testid="stFileUploader"] {
@@ -128,26 +123,6 @@ div.stButton > button:hover {
     transition: width 0.4s ease;
 }
 
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
-}
-
 .global-text {
     position:absolute;
     width:100%;
@@ -164,24 +139,18 @@ div.stButton > button:hover {
     font-size:13px;
     margin-bottom:6px;
 }
-
-.loading {
-    font-size:14px;
-    color:#475569;
-    margin-top:10px;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER (ICON PDF)
+# HEADER (ICON PDF ĐỎ)
 # =========================
-st.markdown(f'''
+st.markdown("""
 <div class="header">
-    <img src="data:image/png;base64,{pdf_icon}">
+    <img src="https://cdn-icons-png.flaticon.com/512/337/337946.png">
     THL PDF → EXCEL
 </div>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -206,7 +175,6 @@ if current_names != st.session_state.last_uploaded_names:
 # OCR
 # =========================
 def ocr_extract(img):
-
     def read(image):
         text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
@@ -219,7 +187,6 @@ def ocr_extract(img):
         img,
         img.crop((0,0,w,int(h*0.4))),
         img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]:
@@ -232,20 +199,20 @@ def ocr_extract(img):
 # =========================
 # GLOBAL BAR
 # =========================
-def render_global_bar(percent, speed, eta):
-
+def render_global_bar(percent, eta):
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
-    return f"""<div class="global-wrap">
+    return f"""
+<div class="global-wrap">
     <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
+        <div>{percent}%</div>
+        <div>{eta_text}</div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%"></div>
         <div class="global-text">{percent}%</div>
     </div>
-</div>"""
+</div>
+"""
 
 # =========================
 # PROCESS
@@ -268,7 +235,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
@@ -337,9 +304,7 @@ if uploaded_files:
         wb = load_workbook(tmp_excel.name)
         wb.save(tmp_excel.name)
 
-        # =========================
         # AUTO DOWNLOAD + RENAME
-        # =========================
         with open(tmp_excel.name, "rb") as f:
             data = f.read()
 
