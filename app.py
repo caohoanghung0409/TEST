@@ -164,7 +164,7 @@ div.stButton > button:hover {
 # =========================
 # HEADER (ĐỔI ICON PDF)
 # =========================
-st.markdown('<div class="header">📄 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+st.markdown('<div class="header">📕 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -305,10 +305,9 @@ if uploaded_files:
 
         processed_pages = [0]
 
-        # ✅ ĐỔI TÊN FILE
-        tmp_excel_path = os.path.join(tempfile.gettempdir(), "THLPDFTOEXCEL.xlsx")
+        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-        with pd.ExcelWriter(tmp_excel_path, engine='openpyxl') as writer:
+        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
 
@@ -325,7 +324,7 @@ if uploaded_files:
 
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        wb = load_workbook(tmp_excel_path)
+        wb = load_workbook(tmp_excel.name)
 
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -342,15 +341,15 @@ if uploaded_files:
             for cell in ws[1]:
                 cell.font = Font(bold=True)
 
-        wb.save(tmp_excel_path)
+        wb.save(tmp_excel.name)
 
-        st.session_state.excel_file = tmp_excel_path
+        st.session_state.excel_file = tmp_excel.name
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (ĐÃ FIX TÊN FILE)
 # =========================
 if st.session_state.done:
 
@@ -359,11 +358,12 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    b64 = base64.b64encode(data).decode()
-
-    st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
-    """, unsafe_allow_html=True)
+    st.download_button(
+        label="⬇️ Tải file Excel",
+        data=data,
+        file_name="THLPDFTOEXCEL.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
