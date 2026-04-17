@@ -213,17 +213,25 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR (Realtime + ms)
 # =========================
-def render_global_bar(percent, speed, eta):
+def render_global_bar(percent, elapsed, eta):
 
-    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
+    ms = int((elapsed - int(elapsed)) * 1000)
+    elapsed_text = f"{int(elapsed)//60}m {int(elapsed)%60:02d}s {ms:03d}ms"
+
+    if eta == 0:
+        eta_text = "Xong!"
+    elif eta < 10:
+        eta_text = "Gần xong..."
+    else:
+        eta_text = f"{eta//60}m {eta%60:02d}s"
 
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
+        <div>⏱ {elapsed_text} • ⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
@@ -253,7 +261,10 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+        global_box.markdown(
+            render_global_bar(global_percent, elapsed, eta),
+            unsafe_allow_html=True
+        )
 
         box.markdown(f"""
 <div class="file-row">
@@ -272,6 +283,8 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
                 "Ngày": date,
                 "Trang": i
             })
+
+        time.sleep(0.01)  # giúp render mượt hơn
 
     return results
 
@@ -321,7 +334,6 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
