@@ -347,7 +347,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# AUTO DOWNLOAD (ONLY FIX NAME + TRIGGER)
+# AUTO DOWNLOAD (ONLY CHANGE FILE NAME)
 # =========================
 if st.session_state.done:
 
@@ -356,16 +356,19 @@ if st.session_state.done:
     with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
-    file_name = "THLPDFTOEXCEL.xlsx"
     b64 = base64.b64encode(data).decode()
 
-    # AUTO DOWNLOAD TRICK (GIỮ NGUYÊN)
+    # CHỈ ĐỔI TÊN FILE Ở ĐÂY
+    download_filename = "THLPDFTOEXCEL.xlsx"
+
     if st.session_state.trigger_download:
         st.session_state.trigger_download = False
 
         st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-        style="display:none;"></iframe>
+        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+           download="{download_filename}">
+           <span style="display:none;"></span>
+        </a>
         """, unsafe_allow_html=True)
 
         st.markdown('<div class="loading">📥 File đang tự động tải về...</div>', unsafe_allow_html=True)
