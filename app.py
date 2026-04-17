@@ -16,6 +16,11 @@ from openpyxl.styles import Border, Side, Font
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
+# ICON PDF (NHÚNG TRỰC TIẾP)
+# =========================
+pdf_icon = "iVBORw0KGgoAAAANSUhEUgAA..."  # ⚠️ bạn dán base64 icon vào đây nếu cần (hiện đang rút gọn)
+
+# =========================
 # SESSION
 # =========================
 if "processing" not in st.session_state:
@@ -39,9 +44,16 @@ header, #MainMenu, footer {visibility: hidden;}
 .stApp { background: #f1f5f9; }
 
 .header {
+    display:flex;
+    align-items:center;
+    gap:10px;
     font-size:22px;
     font-weight:700;
     margin-bottom:10px;
+}
+
+.header img {
+    width:28px;
 }
 
 [data-testid="stFileUploader"] {
@@ -162,9 +174,14 @@ div.stButton > button:hover {
 """, unsafe_allow_html=True)
 
 # =========================
-# HEADER (ĐỔI ICON PDF)
+# HEADER (ICON PDF)
 # =========================
-st.markdown('<div class="header">📕 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+st.markdown(f'''
+<div class="header">
+    <img src="data:image/png;base64,{pdf_icon}">
+    THL PDF → EXCEL
+</div>
+''', unsafe_allow_html=True)
 
 # =========================
 # UPLOADER
@@ -219,18 +236,16 @@ def render_global_bar(percent, speed, eta):
 
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
 
-    return f"""
-<div class="global-wrap">
+    return f"""<div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
         <div>⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+        <div class="global-fill" style="width:{percent}%"></div>
         <div class="global-text">{percent}%</div>
     </div>
-</div>
-"""
+</div>"""
 
 # =========================
 # PROCESS
@@ -295,8 +310,6 @@ if uploaded_files:
 
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
-
         start_time = time.time()
 
         total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
@@ -319,55 +332,28 @@ if uploaded_files:
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
-
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df.to_excel(writer, sheet_name=f.name[:31], index=False)
 
         wb = load_workbook(tmp_excel.name)
-
-        thin = Side(style='thin')
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        for ws in wb.worksheets:
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
-
-            for row in ws.iter_rows():
-                for cell in row:
-                    cell.border = border
-
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
-
         wb.save(tmp_excel.name)
 
-        st.session_state.excel_file = tmp_excel.name
-        st.session_state.processing = False
-        st.session_state.done = True
-        st.rerun()
+        # =========================
+        # AUTO DOWNLOAD + RENAME
+        # =========================
+        with open(tmp_excel.name, "rb") as f:
+            data = f.read()
 
-# =========================
-# DOWNLOAD (ĐÃ FIX TÊN FILE)
-# =========================
-if st.session_state.done:
+        b64 = base64.b64encode(data).decode()
 
-    st.success("🎉 HOÀN THÀNH !!!")
+        st.markdown(f"""
+<script>
+const link = document.createElement('a');
+link.href = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}";
+link.download = "THLPDFTOEXCEL.xlsx";
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+</script>
+""", unsafe_allow_html=True)
 
-    with open(st.session_state.excel_file, "rb") as f:
-        data = f.read()
-
-    st.download_button(
-        label="⬇️ Tải file Excel",
-        data=data,
-        file_name="THLPDFTOEXCEL.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
-    if st.button("🔄 XỬ LÝ FILE MỚI"):
-        st.session_state.done = False
-        st.session_state.clear_uploader = not st.session_state.clear_uploader
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.success("🎉 HOÀN THÀNH & ĐÃ TẢI FILE!")
