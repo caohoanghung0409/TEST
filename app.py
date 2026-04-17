@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE PRO MAX (FULL)
+# STYLE PRO MAX (GIỮ NGUYÊN 100%)
 # =========================
 st.markdown("""
 <style>
@@ -186,47 +186,38 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR TỐI ƯU NHANH
+# OCR FIX (CHỈ THAY PHẦN NÀY)
 # =========================
 def ocr_extract(img):
 
     def read(image):
-        text = pytesseract.image_to_string(
-            image,
-            lang='eng',
-            config='--oem 3 --psm 6 -c tessedit_do_invert=0'
-        )
+        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
     w, h = img.size
 
-    # 1. crop trước (nhanh nhất)
+    sm, date = read(img)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
     crop = img.crop((0, 0, w, int(h * 0.4)))
     sm, date = read(crop)
     if sm and date:
         return sm.group(1), date.group(1)
 
-    # 2. crop 180
     img180 = img.rotate(180, expand=True)
+    sm, date = read(img180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
     w2, h2 = img180.size
     crop180 = img180.crop((0, 0, w2, int(h2 * 0.4)))
     sm, date = read(crop180)
     if sm and date:
         return sm.group(1), date.group(1)
 
-    # 3. full
-    sm, date = read(img)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    # 4. full 180
-    sm, date = read(img180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    # 5. 90
     img90 = img.rotate(90, expand=True)
     w3, h3 = img90.size
     crop90 = img90.crop((0, 0, w3, int(h3 * 0.4)))
@@ -234,7 +225,6 @@ def ocr_extract(img):
     if sm and date:
         return sm.group(1), date.group(1)
 
-    # 6. 270
     img270 = img.rotate(270, expand=True)
     w4, h4 = img270.size
     crop270 = img270.crop((0, 0, w4, int(h4 * 0.4)))
@@ -245,7 +235,7 @@ def ocr_extract(img):
     return None, None
 
 # =========================
-# GLOBAL BAR
+# GLOBAL BAR (FULL)
 # =========================
 def render_global_bar(percent, speed, eta):
     return f"""
@@ -267,7 +257,7 @@ def render_global_bar(percent, speed, eta):
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
     results = []
-    images = convert_from_bytes(file.read(), dpi=110)  # giảm DPI để tăng tốc
+    images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
@@ -305,7 +295,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
     return results
 
 # =========================
-# MAIN
+# MAIN (GIỮ NGUYÊN)
 # =========================
 if uploaded_files:
 
@@ -328,7 +318,7 @@ if uploaded_files:
 
         start_time = time.time()
 
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=80)) for f in uploaded_files)
+        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
         for f in uploaded_files:
             f.seek(0)
 
@@ -375,7 +365,7 @@ if uploaded_files:
         st.rerun()
 
 # =========================
-# DOWNLOAD
+# DOWNLOAD (GIỮ NGUYÊN)
 # =========================
 if st.session_state.done:
 
