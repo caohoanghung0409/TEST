@@ -4,7 +4,6 @@ from pdf2image import convert_from_bytes
 import pandas as pd
 import re
 import tempfile
-import zipfile
 import os
 import time
 import base64
@@ -16,7 +15,7 @@ from openpyxl import load_workbook
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
-# SESSION
+# SESSION STATE
 # =========================
 if "processing" not in st.session_state:
     st.session_state.processing = False
@@ -24,30 +23,33 @@ if "processing" not in st.session_state:
 if "done" not in st.session_state:
     st.session_state.done = False
 
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
-
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
-
 if "excel" not in st.session_state:
     st.session_state.excel = None
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN UI)
 # =========================
 st.markdown("""
 <style>
 header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<h2>🚀 THL PDF → EXCEL</h2>', unsafe_allow_html=True)
 
 # =========================
-# UPLOAD
+# UPLOAD FILE
 # =========================
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
@@ -56,7 +58,7 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# OCR FUNCTION (UPDATED)
+# OCR FUNCTION (ĐÃ FIX SM + PR + SO)
 # =========================
 def process_page(img):
     text = pytesseract.image_to_string(
@@ -86,13 +88,14 @@ def extract_pdf(file):
 
     images = convert_from_bytes(file.read(), dpi=150)
 
-    for i, img in enumerate(images, start=1):
+    for img in images:
 
         w, h = img.size
-        img = img.crop((0, 0, w, int(h * 0.4)))  # chỉ OCR phần trên
+        img = img.crop((0, 0, w, int(h * 0.4)))
 
         sm, pr, so, date = process_page(img)
 
+        # chỉ cần có 1 cái cũng lấy
         if sm or pr or so:
             results.append({
                 "SM": sm,
@@ -104,7 +107,7 @@ def extract_pdf(file):
     return results
 
 # =========================
-# RUN
+# RUN BUTTON
 # =========================
 if uploaded_files:
 
@@ -128,7 +131,9 @@ if uploaded_files:
                 sheet_name = os.path.splitext(f.name)[0][:31]
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # AUTO WIDTH
+        # =========================
+        # AUTO WIDTH EXCEL
+        # =========================
         wb = load_workbook(excel_file.name)
 
         for ws in wb.worksheets:
@@ -157,10 +162,10 @@ if st.session_state.done:
 
     st.markdown(f"""
     <a href="data:application/octet-stream;base64,{b64}" download="result.xlsx">
-        📥 Tải file Excel
+        📥 Tải Excel
     </a>
     """, unsafe_allow_html=True)
 
-    if st.button("🔄 Làm file mới"):
+    if st.button("🔄 Xử lý file mới"):
         st.session_state.done = False
         st.rerun()
