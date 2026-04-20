@@ -186,33 +186,37 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (0° + 180°)
+# OCR FINAL (3 LỚP + 0/180)
 # =========================
 def ocr_extract(img):
 
-    def extract_from_image(image):
-
-        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    def process(image, mode):
 
         h, w = image.size[1], image.size[0]
-        y_anchor = None
 
-        for i, text in enumerate(data["text"]):
-            if text:
-                t = text.upper().replace(" ", "")
-                if "PHIEU" in t or "GIAO" in t:
-                    y_anchor = data["top"][i]
-                    break
+        if mode == 1:
+            data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+            y_anchor = None
 
-        if y_anchor:
-            top = y_anchor + 30
-            bottom = top + int(h * 0.2)
-            img_crop = image.crop((0, top, w, bottom))
-        else:
-            img_crop = image.crop((0, 0, w, int(h * 0.4)))
+            for i, text in enumerate(data["text"]):
+                if text:
+                    t = text.upper().replace(" ", "")
+                    if "PHIEU" in t or "GIAO" in t:
+                        y_anchor = data["top"][i]
+                        break
+
+            if y_anchor:
+                top = y_anchor + 20
+                bottom = top + int(h * 0.25)
+                image = image.crop((0, top, w, bottom))
+            else:
+                return None, None
+
+        elif mode == 2:
+            image = image.crop((0, 0, w, int(h * 0.45)))
 
         text = pytesseract.image_to_string(
-            img_crop,
+            image,
             lang='eng',
             config='--oem 3 --psm 6'
         )
@@ -220,7 +224,7 @@ def ocr_extract(img):
         text = text.replace("\n", " ")
         text = re.sub(r"\s+", " ", text)
 
-        m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,50})", text)
+        m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,60})", text)
         if not m:
             return None, None
 
@@ -237,12 +241,19 @@ def ocr_extract(img):
 
         return block, date
 
-    so, date = extract_from_image(img)
-    if so:
-        return so, date
+    for mode in [1, 2, 3]:
+        so, date = process(img, mode)
+        if so:
+            return so, date
 
-    img_rotated = img.rotate(180, expand=True)
-    return extract_from_image(img_rotated)
+    img2 = img.rotate(180, expand=True)
+
+    for mode in [1, 2, 3]:
+        so, date = process(img2, mode)
+        if so:
+            return so, date
+
+    return None, None
 
 # =========================
 # GLOBAL BAR
