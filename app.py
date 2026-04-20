@@ -1,125 +1,135 @@
 import streamlit as st
-import pytesseract
-from pdf2image import convert_from_bytes
+import fitz  # PyMuPDF
+import cv2
+import numpy as np
 import pandas as pd
 import re
+from paddleocr import PaddleOCR
 import tempfile
-import base64
-from openpyxl import load_workbook
+import os
 
-st.set_page_config(page_title="PDF FIX TABLE MODE", layout="wide")
-st.title("🚀 FIX PR / SO / SM LẶP & THIẾU")
+# ======================
+# INIT OCR
+# ======================
+ocr = PaddleOCR(use_angle_cls=True, lang='vi')
 
-uploaded_files = st.file_uploader("Upload PDF", type=["pdf"], accept_multiple_files=True)
+st.set_page_config(page_title="PDF OCR CLEAN", layout="wide")
+st.title("📄 PDF OCR -> Excel (Clean Version)")
 
-# =========================
-# CLEAN
-# =========================
-def clean(x):
-    if not x:
+# ======================
+# CLEAN FUNCTION
+# ======================
+def extract_date(text):
+    if pd.isna(text):
         return None
-    return re.sub(r"\s+", "", x)
+    m = re.search(r'\d{2}/\d{2}/\d{4}', str(text))
+    return m.group(0) if m else None
 
-# =========================
-# PARSE LINE BY LINE (QUAN TRỌNG)
-# =========================
-def extract_pdf(file):
 
-    pdf_bytes = file.getvalue()
-    images = convert_from_bytes(pdf_bytes, dpi=120)
+def extract_pr(text):
+    if pd.isna(text):
+        return None
+    m = re.search(r'PR\d{4}\.\d+', str(text))
+    return m.group(0) if m else None
 
-    results = []
 
-    # 🔥 STATE MACHINE
-    current_sm = None
-    current_pr = None
-    current_so = None
+def is_noise(row):
+    raw = " ".join([str(x) for x in row.values if pd.notna(x)])
+
+    if len(raw.strip()) < 8:
+        return True
+
+    blacklist = [
+        "phiếu", "giao hàng", "địa chỉ", "điện thoại",
+        "fax", "mst", "dai dien", "ben giao", "ben nhan"
+    ]
+
+    if any(x in raw.lower() for x in blacklist):
+        return True
+
+    if re.search(r'PR\d{4}\.\d+', raw):
+        return False
+
+    if re.match(r'^\d+$', str(row.get("STT", ""))):
+        return False
+
+    return False
+
+
+def clean_df(df):
+    if "Ngày" in df.columns:
+        df["Ngày"] = df["Ngày"].apply(extract_date)
+
+    if "PR" in df.columns:
+        df["PR"] = df["PR"].apply(extract_pr)
+
+    df = df[~df.apply(is_noise, axis=1)]
+    return df.reset_index(drop=True)
+
+# ======================
+# PDF TO IMAGE
+# ======================
+def pdf_to_images(pdf_file):
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    images = []
+
+    for page in doc:
+        pix = page.get_pixmap(dpi=300)
+        img = np.frombuffer(pix.tobytes(), dtype=np.uint8)
+        img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+        images.append(img)
+
+    return images
+
+# ======================
+# OCR
+# ======================
+def run_ocr(images):
+    all_rows = []
 
     for img in images:
+        result = ocr.ocr(img, cls=True)
 
-        text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        for line in result[0]:
+            text = line[1][0]
+            all_rows.append([text])
 
-        for line in lines:
+    df = pd.DataFrame(all_rows, columns=["Raw"])
 
-            # =========================
-            # UPDATE HEADER VALUES
-            # =========================
-            sm = re.search(r"SM\s*\d{3,5}[\.\s]?\d{3,5}", line)
-            pr = re.search(r"PR\s*\d{3,5}[\.\s]?\d{3,5}", line)
-            so = re.search(r"SO\s*\d{3,5}[\.\s]?\d{3,5}", line)
-            date = re.search(r"\d{2}/\d{2}/\d{4}", line)
+    # ===== parse cơ bản =====
+    df["STT"] = df["Raw"].apply(lambda x: re.findall(r'^\d+', str(x)))
+    df["STT"] = df["STT"].apply(lambda x: x[0] if x else None)
 
-            if sm:
-                current_sm = clean(sm.group())
-            if pr:
-                current_pr = clean(pr.group())
-            if so:
-                current_so = clean(so.group())
+    df["PR"] = df["Raw"].apply(extract_pr)
+    df["Ngày"] = df["Raw"].apply(extract_date)
 
-            # =========================
-            # ITEM ROW (DATA LINE)
-            # =========================
-            if any([current_pr, current_so, current_sm]):
+    return df
 
-                results.append({
-                    "SM": current_sm,
-                    "PR": current_pr,
-                    "SO": current_so,
-                    "Ngày": date.group() if date else None,
-                    "Raw": line
-                })
+# ======================
+# UI
+# ======================
+uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
 
-    return results
+if uploaded_file:
+    with st.spinner("Đang xử lý OCR..."):
+        images = pdf_to_images(uploaded_file)
+        df = run_ocr(images)
+        df = clean_df(df)
 
-# =========================
-# RUN
-# =========================
-if uploaded_files:
+    st.success("Done!")
 
-    if st.button("🚀 Xử lý"):
+    st.subheader("📊 Data sau khi clean")
+    st.dataframe(df)
 
-        all_data = []
+    # ======================
+    # EXPORT EXCEL
+    # ======================
+    output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx").name
+    df.to_excel(output_path, index=False)
 
-        for f in uploaded_files:
-
-            data = extract_pdf(f)
-
-            df = pd.DataFrame(data)
-
-            if not df.empty:
-                df.insert(0, "STT", range(1, len(df)+1))
-
-            all_data.append((f.name, df))
-
-        # =========================
-        # SAFE EXPORT
-        # =========================
-        excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-
-        with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
-
-            wrote = False
-
-            for name, df in all_data:
-
-                if df is not None and not df.empty:
-                    wrote = True
-                    df.to_excel(writer, sheet_name=name[:31], index=False)
-
-            if not wrote:
-                pd.DataFrame([{"ERROR": "NO DATA FOUND"}]).to_excel(writer, index=False)
-
-        # =========================
-        # DOWNLOAD
-        # =========================
-        with open(excel_file.name, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-
-        st.success("DONE")
-
-        st.markdown(f"""
-        <a href="data:application/octet-stream;base64,{b64}" download="result.xlsx">
-        📥 Download Excel
-        </a>
-        """, unsafe_allow_html=True)
+    with open(output_path, "rb") as f:
+        st.download_button(
+            "📥 Download Excel",
+            f,
+            file_name="ket_qua.xlsx"
+        )
