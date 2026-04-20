@@ -4,11 +4,11 @@ from pdf2image import convert_from_bytes
 import pandas as pd
 import re
 import tempfile
-import zipfile
 import os
 import time
 import base64
 from openpyxl import load_workbook
+from openpyxl.styles import Border, Side, Font
 
 # =========================
 # CONFIG
@@ -20,21 +20,17 @@ st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 # =========================
 if "processing" not in st.session_state:
     st.session_state.processing = False
-
 if "done" not in st.session_state:
     st.session_state.done = False
-
 if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
-
 if "last_uploaded_names" not in st.session_state:
     st.session_state.last_uploaded_names = []
-
-if "excel" not in st.session_state:
-    st.session_state.excel = None
+if "excel_file" not in st.session_state:
+    st.session_state.excel_file = None
 
 # =========================
-# STYLE (FULL PRO UI)
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -68,6 +64,10 @@ div.stButton > button {
     font-weight:600;
     font-size:15px;
     box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
 }
 
 .new-btn button {
@@ -188,21 +188,42 @@ if current_names != st.session_state.last_uploaded_names:
 # =========================
 # OCR
 # =========================
-def process_page(img):
-    text = pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-    return (sm.group(1), date.group(1)) if sm and date else (None, None)
+def ocr_extract(img):
+
+    def read(image):
+        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+        sm = re.search(r"(SM\d{4}\.\d{4})", text)
+        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        return sm, date
+
+    w, h = img.size
+
+    for variant in [
+        img,
+        img.crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True)
+    ]:
+        sm, date = read(variant)
+        if sm and date:
+            return sm.group(1), date.group(1)
+
+    return None, None
 
 # =========================
-# GLOBAL BAR (FULL)
+# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
 # =========================
 def render_global_bar(percent, speed, eta):
+
+    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
+
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
         <div>⚡ {percent}%</div>
-        <div>🚀 {speed:.2f} pages/s • ⏳ {eta}s</div>
+        <div>⏳ {eta_text}</div>
     </div>
     <div class="global-bar">
         <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
@@ -212,14 +233,16 @@ def render_global_bar(percent, speed, eta):
 """
 
 # =========================
-# EXTRACT
+# PROCESS
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
+
         processed_pages[0] += 1
 
         percent = int((i/total_pages)*100)
@@ -234,19 +257,21 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         box.markdown(f"""
 <div class="file-row">
-    📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-    <div class="progress">
-        <div class="progress-bar" style="width:{percent}%"></div>
-    </div>
+📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
-        w, h = img.size
-        img = img.crop((0, 0, w, int(h * 0.4)))
+        sm, date = ocr_extract(img)
 
-        sm, date = process_page(img)
         if sm and date:
-            results.append({"SM": sm, "Ngày": date})
+            results.append({
+                "SM": sm,
+                "Ngày": date,
+                "Trang": i
+            })
 
     return results
 
@@ -261,9 +286,11 @@ if uploaded_files:
     if not st.session_state.processing and not st.session_state.done:
 
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
+
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
@@ -278,29 +305,45 @@ if uploaded_files:
 
         processed_pages = [0]
 
-        excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-        with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
+        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
-                data = extract_pdf(f, boxes[i], global_box, start_time, processed_pages, total_pages_all)
+
+                data = extract_pdf(
+                    f, boxes[i], global_box,
+                    start_time, processed_pages, total_pages_all
+                )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
+
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # ✅ AUTO WIDTH ALL SHEETS
-        wb = load_workbook(excel_file.name)
+        wb = load_workbook(tmp_excel.name)
+
+        thin = Side(style='thin')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
         for ws in wb.worksheets:
             for col in ws.columns:
                 max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                 ws.column_dimensions[col[0].column_letter].width = max_len + 3
-        wb.save(excel_file.name)
 
-        st.session_state.excel = excel_file.name
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.border = border
+
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+
+        wb.save(tmp_excel.name)
+
+        st.session_state.excel_file = tmp_excel.name
         st.session_state.processing = False
         st.session_state.done = True
         st.rerun()
@@ -312,7 +355,7 @@ if st.session_state.done:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
-    with open(st.session_state.excel, "rb") as f:
+    with open(st.session_state.excel_file, "rb") as f:
         data = f.read()
 
     b64 = base64.b64encode(data).decode()
