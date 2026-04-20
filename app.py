@@ -186,56 +186,63 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (TỐI ƯU CHUẨN)
+# OCR (0° + 180°)
 # =========================
 def ocr_extract(img):
 
-    text = pytesseract.image_to_string(
-        img,
-        lang='eng',
-        config='--oem 3 --psm 6'
-    )
+    def extract_from_image(image):
 
-    text = text.replace("\n", " ")
-    text = re.sub(r"\s+", " ", text)
+        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
 
-    # Lấy block sau "Số"
-    m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,80})", text)
-    if not m:
-        return None, None
+        h, w = image.size[1], image.size[0]
+        y_anchor = None
 
-    block = m.group(1)
+        for i, text in enumerate(data["text"]):
+            if text:
+                t = text.upper().replace(" ", "")
+                if "PHIEU" in t or "GIAO" in t:
+                    y_anchor = data["top"][i]
+                    break
 
-    # Cắt trước "Ngày"
-    block = re.split(r"Ngày|Ngay|\d{2}/\d{2}/\d{4}", block)[0]
+        if y_anchor:
+            top = y_anchor + 30
+            bottom = top + int(h * 0.2)
+            img_crop = image.crop((0, top, w, bottom))
+        else:
+            img_crop = image.crop((0, 0, w, int(h * 0.4)))
 
-    # Bắt rộng
-    raw_codes = re.findall(r"[A-Z0-9]{1,4}[\s\-\.]?\d{4}[\.\-]?\d{4}", block)
+        text = pytesseract.image_to_string(
+            img_crop,
+            lang='eng',
+            config='--oem 3 --psm 6'
+        )
 
-    clean_codes = []
+        text = text.replace("\n", " ")
+        text = re.sub(r"\s+", " ", text)
 
-    for c in raw_codes:
-        c = c.upper()
+        m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,50})", text)
+        if not m:
+            return None, None
 
-        c = c.replace("O", "0")
-        c = c.replace("I", "1")
+        block = m.group(1)
+        block = re.split(r"Ngày|Ngay|\d{2}/\d{2}/\d{4}", block)[0]
+        block = block.strip().replace(" ", "")
+        block = re.sub(r"[^A-Z0-9./]", "", block)
 
-        c = re.sub(r"[^A-Z0-9./]", "", c)
+        if len(block) < 6:
+            return None, None
 
-        m2 = re.search(r"([A-Z]{1,3})(\d{4})[.\-]?(\d{4})", c)
-        if m2:
-            c = f"{m2.group(1)}{m2.group(2)}.{m2.group(3)}"
-            clean_codes.append(c)
+        date_match = re.search(r"\d{2}/\d{2}/\d{4}", text)
+        date = date_match.group(0) if date_match else None
 
-    if not clean_codes:
-        return None, None
+        return block, date
 
-    so = "/".join(clean_codes)
+    so, date = extract_from_image(img)
+    if so:
+        return so, date
 
-    date_match = re.search(r"\d{2}/\d{2}/\d{4}", text)
-    date = date_match.group(0) if date_match else None
-
-    return so, date
+    img_rotated = img.rotate(180, expand=True)
+    return extract_from_image(img_rotated)
 
 # =========================
 # GLOBAL BAR
