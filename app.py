@@ -13,36 +13,7 @@ from openpyxl import load_workbook
 # =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
-# =========================
-# SESSION STATE
-# =========================
-if "done" not in st.session_state:
-    st.session_state.done = False
-
-if "excel" not in st.session_state:
-    st.session_state.excel = None
-
-# =========================
-# UI STYLE (GIỮ ĐƠN GIẢN + ỔN ĐỊNH)
-# =========================
-st.markdown("""
-<style>
-header, #MainMenu, footer {visibility: hidden;}
-.block-container {padding-top: 0.5rem;}
-.stApp { background: #f1f5f9; }
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 20px;
-    font-weight:600;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("## 🚀 THL PDF → EXCEL (SM / PR / SO)")
+st.markdown("## 🚀 THL PDF → EXCEL (FIX MẤT SM / PR / SO)")
 
 # =========================
 # UPLOAD
@@ -54,52 +25,78 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# OCR FUNCTION
+# CLEAN FUNCTION
+# =========================
+def clean_code(x):
+    if not x:
+        return None
+    return re.sub(r"\s+", "", x)
+
+# =========================
+# OCR FUNCTION (ROBUST)
 # =========================
 def process_page(img):
+
     text = pytesseract.image_to_string(
         img,
         lang='eng',
         config='--oem 3 --psm 6'
     )
 
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    pr = re.search(r"(PR\d{4}\.\d{4})", text)
-    so = re.search(r"(SO\d{4}\.\d{4})", text)
+    # 🔥 FIX regex chịu lỗi OCR
+    sm = re.search(r"(SM\s*\d{3,5}[\.\s]?\d{3,5})", text)
+    pr = re.search(r"(PR\s*\d{3,5}[\.\s]?\d{3,5})", text)
+    so = re.search(r"(SO\s*\d{3,5}[\.\s]?\d{3,5})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
 
     return (
-        sm.group(1) if sm else None,
-        pr.group(1) if pr else None,
-        so.group(1) if so else None,
+        clean_code(sm.group(1)) if sm else None,
+        clean_code(pr.group(1)) if pr else None,
+        clean_code(so.group(1)) if so else None,
         date.group(1) if date else None
     )
 
 # =========================
-# EXTRACT PDF (FIX CHÍNH Ở ĐÂY)
+# EXTRACT PDF (FIX MẤT DỮ LIỆU)
 # =========================
 def extract_pdf(file):
 
     results = []
 
-    # 🔥 FIX QUAN TRỌNG: KHÔNG DÙNG file.read()
+    # 🔥 FIX QUAN TRỌNG: không dùng file.read()
     pdf_bytes = file.getvalue()
 
-    # giảm dpi để tránh treo
+    # giảm DPI để tránh treo + nhanh hơn
     images = convert_from_bytes(pdf_bytes, dpi=120)
+
+    # 🔥 GIỮ STATE XUYÊN TRANG
+    last_sm = None
+    last_pr = None
+    last_so = None
 
     for img in images:
 
+        # ❗ KHÔNG CROP CỨNG (tránh mất dữ liệu)
         w, h = img.size
-        img = img.crop((0, 0, w, int(h * 0.4)))
+        img = img.crop((0, 0, w, int(h * 0.8)))  # chỉ cắt nhẹ
 
         sm, pr, so, date = process_page(img)
 
-        if sm or pr or so:
+        # 🔥 GIỮ GIÁ TRỊ QUA TRANG
+        if sm:
+            last_sm = sm
+        if pr:
+            last_pr = pr
+        if so:
+            last_so = so
+
+        # chỉ cần có data là ghi
+        if last_sm or last_pr or last_so:
+
             results.append({
-                "SM": sm,
-                "PR": pr,
-                "SO": so,
+                "SM": last_sm,
+                "PR": last_pr,
+                "SO": last_so,
                 "Ngày": date
             })
 
@@ -112,7 +109,7 @@ if uploaded_files:
 
     if st.button("🚀 Bắt đầu xử lý", type="primary"):
 
-        with st.spinner("⏳ Đang xử lý PDF... vui lòng chờ"):
+        with st.spinner("⏳ Đang OCR PDF... vui lòng chờ"):
 
             excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
@@ -143,15 +140,12 @@ if uploaded_files:
             wb.save(excel_file.name)
 
             st.session_state.excel = excel_file.name
-            st.session_state.done = True
-            st.rerun()
+            st.success("🎉 Xử lý xong!")
 
 # =========================
 # DOWNLOAD
 # =========================
-if st.session_state.done:
-
-    st.success("🎉 Xử lý hoàn tất!")
+if "excel" in st.session_state and st.session_state.excel:
 
     with open(st.session_state.excel, "rb") as f:
         data = f.read()
@@ -163,7 +157,3 @@ if st.session_state.done:
             📥 Tải file Excel
         </a>
     """, unsafe_allow_html=True)
-
-    if st.button("🔄 Xử lý file mới"):
-        st.session_state.done = False
-        st.rerun()
