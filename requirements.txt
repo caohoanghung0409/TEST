@@ -3,4 +3,5 @@ pytesseract
 pdf2image
 pandas
 openpyxl
-Pillow
+opencv-python-headless
+numpy
