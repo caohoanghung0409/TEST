@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 # =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
-st.markdown("## 🚀 THL PDF → EXCEL (FIX MẤT SM / PR / SO)")
+st.markdown("## 🚀 THL PDF → EXCEL (FIX DUPLICATE + SM PR SO)")
 
 # =========================
 # UPLOAD
@@ -25,17 +25,17 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# CLEAN FUNCTION
+# CLEAN
 # =========================
-def clean_code(x):
+def clean(x):
     if not x:
         return None
     return re.sub(r"\s+", "", x)
 
 # =========================
-# OCR FUNCTION (ROBUST)
+# OCR
 # =========================
-def process_page(img):
+def extract_text(img):
 
     text = pytesseract.image_to_string(
         img,
@@ -43,73 +43,61 @@ def process_page(img):
         config='--oem 3 --psm 6'
     )
 
-    # 🔥 FIX regex chịu lỗi OCR
     sm = re.search(r"(SM\s*\d{3,5}[\.\s]?\d{3,5})", text)
     pr = re.search(r"(PR\s*\d{3,5}[\.\s]?\d{3,5})", text)
     so = re.search(r"(SO\s*\d{3,5}[\.\s]?\d{3,5})", text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
 
     return (
-        clean_code(sm.group(1)) if sm else None,
-        clean_code(pr.group(1)) if pr else None,
-        clean_code(so.group(1)) if so else None,
+        clean(sm.group(1)) if sm else None,
+        clean(pr.group(1)) if pr else None,
+        clean(so.group(1)) if so else None,
         date.group(1) if date else None
     )
 
 # =========================
-# EXTRACT PDF (FIX MẤT DỮ LIỆU)
+# CORE FIX (QUAN TRỌNG)
 # =========================
 def extract_pdf(file):
 
     results = []
 
-    # 🔥 FIX QUAN TRỌNG: không dùng file.read()
+    # 🔥 FIX: dùng getvalue()
     pdf_bytes = file.getvalue()
 
-    # giảm DPI để tránh treo + nhanh hơn
+    # convert PDF → images
     images = convert_from_bytes(pdf_bytes, dpi=120)
-
-    # 🔥 GIỮ STATE XUYÊN TRANG
-    last_sm = None
-    last_pr = None
-    last_so = None
 
     for img in images:
 
-        # ❗ KHÔNG CROP CỨNG (tránh mất dữ liệu)
+        # chỉ crop nhẹ (không cắt mất data)
         w, h = img.size
-        img = img.crop((0, 0, w, int(h * 0.8)))  # chỉ cắt nhẹ
+        img = img.crop((0, 0, w, int(h * 0.8)))
 
-        sm, pr, so, date = process_page(img)
+        sm, pr, so, date = extract_text(img)
 
-        # 🔥 GIỮ GIÁ TRỊ QUA TRANG
-        if sm:
-            last_sm = sm
-        if pr:
-            last_pr = pr
-        if so:
-            last_so = so
+        # 🔥 QUAN TRỌNG: KHÔNG carry forward
+        # mỗi page = 1 record độc lập
 
-        # chỉ cần có data là ghi
-        if last_sm or last_pr or last_so:
+        if sm or pr or so or date:
 
             results.append({
-                "SM": last_sm,
-                "PR": last_pr,
-                "SO": last_so,
+                "SM": sm,
+                "PR": pr,
+                "SO": so,
                 "Ngày": date
             })
 
     return results
 
 # =========================
-# RUN BUTTON
+# RUN
 # =========================
 if uploaded_files:
 
     if st.button("🚀 Bắt đầu xử lý", type="primary"):
 
-        with st.spinner("⏳ Đang OCR PDF... vui lòng chờ"):
+        with st.spinner("⏳ Đang OCR PDF..."):
 
             excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
@@ -121,6 +109,7 @@ if uploaded_files:
 
                     df = pd.DataFrame(data)
 
+                    # thêm STT đúng từng sheet
                     if not df.empty:
                         df.insert(0, "STT", range(1, len(df)+1))
 
@@ -139,21 +128,21 @@ if uploaded_files:
 
             wb.save(excel_file.name)
 
-            st.session_state.excel = excel_file.name
+            st.session_state.file = excel_file.name
             st.success("🎉 Xử lý xong!")
 
 # =========================
 # DOWNLOAD
 # =========================
-if "excel" in st.session_state and st.session_state.excel:
+if "file" in st.session_state:
 
-    with open(st.session_state.excel, "rb") as f:
+    with open(st.session_state.file, "rb") as f:
         data = f.read()
 
     b64 = base64.b64encode(data).decode()
 
     st.markdown(f"""
         <a href="data:application/octet-stream;base64,{b64}" download="result.xlsx">
-            📥 Tải file Excel
+            📥 Tải Excel
         </a>
     """, unsafe_allow_html=True)
