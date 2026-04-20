@@ -9,41 +9,112 @@ import time
 import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
-from concurrent.futures import ProcessPoolExecutor
-import cv2
-import numpy as np
 
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
-st.title("🚀 THL PDF → EXCEL (MAX SPEED)")
+# =========================
+# SESSION
+# =========================
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+if "done" not in st.session_state:
+    st.session_state.done = False
+if "clear_uploader" not in st.session_state:
+    st.session_state.clear_uploader = False
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
+if "excel_file" not in st.session_state:
+    st.session_state.excel_file = None
+
+# =========================
+# STYLE (GIỮ NGUYÊN)
+# =========================
+st.markdown("""<style>
+header, #MainMenu, footer {visibility: hidden;}
+.block-container {padding-top: 0.5rem !important;}
+.stApp { background: #f1f5f9; }
+
+.header { font-size:22px; font-weight:700; margin-bottom:10px; }
+
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+}
+
+.new-btn button {
+    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+}
+
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:6px;
+}
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+</style>""", unsafe_allow_html=True)
+
+# =========================
+# HEADER
+# =========================
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+
+# =========================
+# UPLOADER
+# =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
 
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
+    st.session_state.processing = False
+    st.session_state.done = False
+    st.session_state.last_uploaded_names = current_names
+
 # =========================
-# OCR SIÊU NHANH
+# OCR NHANH (KHÔNG CV2)
 # =========================
-def ocr_fast(img):
+def ocr_extract(img):
 
-    # 👉 convert PIL -> OpenCV
-    img = np.array(img)
+    w, h = img.size
 
-    h, w = img.shape[:2]
+    # crop vùng trên
+    img = img.crop((0, 0, w, int(h * 0.35)))
 
-    # 👉 crop vùng trên
-    img = img[0:int(h*0.35), :]
-
-    # 👉 resize nhỏ lại (giảm load)
-    img = cv2.resize(img, None, fx=0.7, fy=0.7)
-
-    # 👉 grayscale
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # 👉 threshold tăng độ rõ chữ
-    _, img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY)
+    # resize nhẹ
+    img = img.resize((int(w * 0.7), int(h * 0.35 * 0.7)))
 
     def read(im):
         text = pytesseract.image_to_string(
@@ -55,79 +126,88 @@ def ocr_fast(img):
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
-    # 👉 chỉ 2 hướng
-    for v in [img, cv2.rotate(img, cv2.ROTATE_180)]:
+    # chỉ 2 hướng
+    for v in [img, img.rotate(180, expand=True)]:
         sm, date = read(v)
         if sm and date:
             return sm.group(1), date.group(1)
 
     return None, None
 
-
 # =========================
-# XỬ LÝ 1 TRANG (song song)
+# PROCESS
 # =========================
-def process_page(args):
-    img, index = args
+def extract_pdf(file, box):
 
-    sm, date = ocr_fast(img)
+    results = []
 
-    if sm and date:
-        return {
-            "SM": sm,
-            "Ngày": date,
-            "Trang": index + 1
-        }
-    return None
+    # DPI thấp để nhanh
+    images = convert_from_bytes(file.read(), dpi=90)
+    total = len(images)
 
+    for i, img in enumerate(images, start=1):
+
+        # update nhẹ UI (không spam)
+        if i % 2 == 0:
+            percent = int((i/total)*100)
+            box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — {percent}%
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+        sm, date = ocr_extract(img)
+
+        if sm and date:
+            results.append({
+                "SM": sm,
+                "Ngày": date,
+                "Trang": i
+            })
+
+    return results
 
 # =========================
 # MAIN
 # =========================
 if uploaded_files:
 
-    if st.button("🚀 Bắt đầu xử lý"):
+    boxes = [st.empty() for _ in uploaded_files]
 
-        start = time.time()
+    if not st.session_state.processing and not st.session_state.done:
+
+        if st.button("🚀 Bắt đầu xử lý"):
+            st.session_state.processing = True
+            st.rerun()
+
+    if st.session_state.processing:
+
+        start_time = time.time()
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-            for f in uploaded_files:
+            for i, f in enumerate(uploaded_files):
 
-                st.write(f"📄 Đang xử lý: {f.name}")
+                data = extract_pdf(f, boxes[i])
 
-                # 🔥 DPI thấp + nhanh
-                images = convert_from_bytes(f.read(), dpi=85)
-
-                # 👉 chạy song song
-                with ProcessPoolExecutor() as executor:
-                    results = list(executor.map(
-                        process_page,
-                        [(img, i) for i, img in enumerate(images)]
-                    ))
-
-                # lọc None
-                results = [r for r in results if r]
-
-                if results:
-                    df = pd.DataFrame(results)
+                if data:
+                    df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # =========================
-        # FORMAT EXCEL
-        # =========================
         wb = load_workbook(tmp_excel.name)
 
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         for ws in wb.worksheets:
-
             for col in ws.columns:
                 max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                 ws.column_dimensions[col[0].column_letter].width = max_len + 2
@@ -141,18 +221,28 @@ if uploaded_files:
 
         wb.save(tmp_excel.name)
 
-        # =========================
-        # DOWNLOAD
-        # =========================
-        with open(tmp_excel.name, "rb") as f:
-            data = f.read()
+        st.session_state.excel_file = tmp_excel.name
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
-        b64 = base64.b64encode(data).decode()
+# =========================
+# DOWNLOAD
+# =========================
+if st.session_state.done:
 
-        st.success(f"🎉 Xong trong {round(time.time()-start,2)}s")
+    st.success("🎉 HOÀN THÀNH !!!")
 
-        st.markdown(f"""
-        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="result.xlsx">
-        📥 Tải file Excel
-        </a>
-        """, unsafe_allow_html=True)
+    with open(st.session_state.excel_file, "rb") as f:
+        data = f.read()
+
+    b64 = base64.b64encode(data).decode()
+
+    st.markdown(f"""
+    <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
+
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
