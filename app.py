@@ -7,14 +7,24 @@ import tempfile
 import base64
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="PDF TO EXCEL FIX DUP", layout="wide")
+# =========================
+# CONFIG
+# =========================
+st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
-st.title("🚀 FIX TRÙNG PR / SO / SM")
-
-uploaded_files = st.file_uploader("Upload PDF", type=["pdf"], accept_multiple_files=True)
+st.markdown("## 🚀 THL PDF → EXCEL (ANCHOR: PHIẾU GIAO HÀNG)")
 
 # =========================
-# CLEAN
+# UPLOAD
+# =========================
+uploaded_files = st.file_uploader(
+    "📂 Chọn file PDF",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
+# =========================
+# CLEAN FUNCTION
 # =========================
 def clean(x):
     if not x:
@@ -22,56 +32,74 @@ def clean(x):
     return re.sub(r"\s+", "", x)
 
 # =========================
-# OCR
+# OCR + ANCHOR EXTRACTION
 # =========================
-def parse_text(text):
+def extract_from_page(img):
 
-    sm = re.search(r"SM\s*\d{3,5}[\.\s]?\d{3,5}", text)
-    pr = re.search(r"PR\s*\d{3,5}[\.\s]?\d{3,5}", text)
-    so = re.search(r"SO\s*\d{3,5}[\.\s]?\d{3,5}", text)
-    date = re.search(r"\d{2}/\d{2}/\d{4}", text)
+    text = pytesseract.image_to_string(
+        img,
+        lang='eng',
+        config='--oem 3 --psm 6'
+    )
+
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    # =========================
+    # 1. FIND ANCHOR
+    # =========================
+    start_idx = -1
+
+    for i, line in enumerate(lines):
+        if "PHIẾU GIAO HÀNG" in line.upper():
+            start_idx = i
+            break
+
+    # nếu không có anchor → fallback toàn trang
+    if start_idx == -1:
+        target_lines = lines
+    else:
+        target_lines = lines[start_idx:]
+
+    zone_text = " ".join(target_lines)
+
+    # =========================
+    # 2. EXTRACT DATA
+    # =========================
+    sm = re.search(r"(SM\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
+    pr = re.search(r"(PR\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
+    so = re.search(r"(SO\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
+    date = re.search(r"(\d{2}/\d{2}/\d{4})", zone_text)
 
     return (
-        clean(sm.group()) if sm else None,
-        clean(pr.group()) if pr else None,
-        clean(so.group()) if so else None,
-        date.group() if date else None
+        clean(sm.group(1)) if sm else None,
+        clean(pr.group(1)) if pr else None,
+        clean(so.group(1)) if so else None,
+        date.group(1) if date else None
     )
 
 # =========================
-# MAIN FIX ENGINE
+# EXTRACT PDF
 # =========================
 def extract_pdf(file):
+
+    results = []
 
     pdf_bytes = file.getvalue()
     images = convert_from_bytes(pdf_bytes, dpi=120)
 
-    results = []
-
     for img in images:
 
-        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
+        sm, pr, so, date = extract_from_page(img)
 
-        sm, pr, so, date = parse_text(text)
+        # chỉ ghi khi có data thật
+        if sm or pr or so or date:
 
-        # 🔥 CHỐNG TRÙNG TRONG CÙNG FILE
-        key = (pr, so, date)
-
-        # nếu đã tồn tại → skip
-        if any(r.get("key") == key for r in results):
-            continue
-
-        results.append({
-            "SM": sm,
-            "PR": pr,
-            "SO": so,
-            "Ngày": date,
-            "key": key
-        })
-
-    # bỏ key trước khi export
-    for r in results:
-        r.pop("key", None)
+            results.append({
+                "SM": sm,
+                "PR": pr,
+                "SO": so,
+                "Ngày": date
+            })
 
     return results
 
@@ -80,39 +108,53 @@ def extract_pdf(file):
 # =========================
 if uploaded_files:
 
-    if st.button("🚀 Xử lý"):
+    if st.button("🚀 Bắt đầu xử lý", type="primary"):
 
-        excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        with st.spinner("⏳ Đang xử lý PDF..."):
 
-        with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
+            excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-            for f in uploaded_files:
+            with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
 
-                data = extract_pdf(f)
+                for f in uploaded_files:
 
-                df = pd.DataFrame(data)
+                    data = extract_pdf(f)
 
-                if not df.empty:
-                    df.insert(0, "STT", range(1, len(df)+1))
+                    df = pd.DataFrame(data)
 
-                df.to_excel(writer, sheet_name=f.name[:31], index=False)
+                    if not df.empty:
+                        df.insert(0, "STT", range(1, len(df)+1))
 
-        wb = load_workbook(excel_file.name)
+                    sheet_name = os.path.splitext(f.name)[0][:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        for ws in wb.worksheets:
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+            # =========================
+            # AUTO WIDTH
+            # =========================
+            wb = load_workbook(excel_file.name)
 
-        wb.save(excel_file.name)
+            for ws in wb.worksheets:
+                for col in ws.columns:
+                    max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                    ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
-        with open(excel_file.name, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
+            wb.save(excel_file.name)
 
-        st.success("DONE")
+            st.session_state.file = excel_file.name
+            st.success("🎉 Xử lý xong!")
 
-        st.markdown(f"""
+# =========================
+# DOWNLOAD
+# =========================
+if "file" in st.session_state:
+
+    with open(st.session_state.file, "rb") as f:
+        data = f.read()
+
+    b64 = base64.b64encode(data).decode()
+
+    st.markdown(f"""
         <a href="data:application/octet-stream;base64,{b64}" download="result.xlsx">
-        📥 Download Excel
+            📥 Tải Excel
         </a>
-        """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
