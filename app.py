@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -38,21 +38,13 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
+.header { font-size:22px; font-weight:700; margin-bottom:10px; }
 
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -62,101 +54,10 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.25s ease;
-}
-div.stButton > button:hover {
-    transform: translateY(-2px) scale(1.02);
 }
 
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
-}
-
-.process-btn {
-    margin-top: 25px;
-    margin-bottom: 15px;
-}
-
-.file-row {
-    margin-top:12px;
-    padding:10px;
-    border-radius:12px;
-    background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
-}
-
-.progress {
-    height:8px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-    margin-top:6px;
-}
-.progress-bar {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
-}
-
-.global-wrap { margin:15px 0; }
-
-.global-bar {
-    position:relative;
-    height:20px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-}
-
-.global-fill {
-    height:100%;
-    border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
-}
-
-.global-text {
-    position:absolute;
-    width:100%;
-    text-align:center;
-    font-size:12px;
-    font-weight:700;
-    top:0;
-    line-height:20px;
-}
-
-.global-meta {
-    display:flex;
-    justify-content:space-between;
-    font-size:13px;
-    margin-bottom:6px;
-}
-
-.loading {
-    font-size:14px;
-    color:#475569;
-    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -186,44 +87,59 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (TỐI ƯU)
+# OCR NÂNG CAO
 # =========================
+def clean_text(text):
+    text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+def extract_so_ngay(text):
+    text = clean_text(text)
+
+    # Bắt "Số" linh hoạt (Số, So, S0, S6)
+    so_pattern = r"S[oố0O6]\s*[:\-]?\s*([A-Z0-9./\s]+)"
+    so_match = re.search(so_pattern, text)
+
+    so = None
+    if so_match:
+        so = so_match.group(1)
+        so = so.strip()
+        so = so.replace(" ", "")
+
+        # Cắt nếu OCR ăn quá dài
+        so = re.split(r"(Ngày|Ngay|\d{2}/\d{2}/\d{4})", so)[0]
+
+    # Ngày
+    date_match = re.search(r"\d{2}/\d{2}/\d{4}", text)
+    date = date_match.group(0) if date_match else None
+
+    return so, date
+
 def ocr_extract(img):
     text = pytesseract.image_to_string(
         img,
         lang='eng',
         config='--oem 3 --psm 6'
     )
-
-    sm = re.search(r"(SM\d{4}\.\d{4})", text)
-    date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    return None, None
+    return extract_so_ngay(text)
 
 # =========================
 # GLOBAL BAR
 # =========================
-def render_global_bar(percent, speed, eta):
+def render_global_bar(percent, eta):
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
     return f"""
-<div class="global-wrap">
-    <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
+    <div>
+        <b>{percent}%</b> | ⏳ {eta_text}
+        <div style="background:#ddd;height:10px;border-radius:10px;">
+            <div style="width:{percent}%;background:#22c55e;height:10px;border-radius:10px;"></div>
+        </div>
     </div>
-    <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
-        <div class="global-text">{percent}%</div>
-    </div>
-</div>
-"""
+    """
 
 # =========================
-# EXTRACT PDF (FIX CHÍNH)
+# EXTRACT PDF
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
@@ -254,22 +170,15 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
 
-        box.markdown(f"""
-<div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
+        box.markdown(f"📄 {file.name} - Trang {i}/{total_pages} ({percent}%)")
 
-        sm, date = ocr_extract(img)
+        so, date = ocr_extract(img)
 
-        if sm and date:
+        if so and date:
             results.append({
-                "SM": sm,
+                "Số": so,
                 "Ngày": date,
                 "Trang": i
             })
@@ -286,17 +195,11 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
     if st.session_state.processing:
-
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -324,7 +227,6 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
@@ -364,12 +266,10 @@ if st.session_state.done:
     b64 = base64.b64encode(data).decode()
 
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
