@@ -116,26 +116,6 @@ div.stButton > button:hover {
     transition: width 0.4s ease;
 }
 
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
-}
-
 .global-text {
     position:absolute;
     width:100%;
@@ -186,7 +166,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR FINAL (3 LỚP + 0/180)
+# OCR FINAL
 # =========================
 def ocr_extract(img):
 
@@ -194,6 +174,7 @@ def ocr_extract(img):
 
         h, w = image.size[1], image.size[0]
 
+        # ===== MODE 1: theo PHIEU
         if mode == 1:
             data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
             y_anchor = None
@@ -206,12 +187,11 @@ def ocr_extract(img):
                         break
 
             if y_anchor:
-                top = y_anchor + 20
-                bottom = top + int(h * 0.25)
-                image = image.crop((0, top, w, bottom))
+                image = image.crop((0, y_anchor+20, w, y_anchor + int(h*0.25)))
             else:
                 return None, None
 
+        # ===== MODE 2: crop top
         elif mode == 2:
             image = image.crop((0, 0, w, int(h * 0.45)))
 
@@ -233,7 +213,9 @@ def ocr_extract(img):
         block = block.strip().replace(" ", "")
         block = re.sub(r"[^A-Z0-9./]", "", block)
 
-        if len(block) < 6:
+        # 🔥 VALIDATION CHUẨN
+        valid = re.search(r"[A-Z]{0,3}\d{4}\.\d{3,4}", block)
+        if not valid:
             return None, None
 
         date_match = re.search(r"\d{2}/\d{2}/\d{4}", text)
@@ -241,14 +223,15 @@ def ocr_extract(img):
 
         return block, date
 
-    for mode in [1, 2, 3]:
+    # ===== thử ảnh gốc
+    for mode in [1, 2]:
         so, date = process(img, mode)
         if so:
             return so, date
 
+    # ===== thử lật 180
     img2 = img.rotate(180, expand=True)
-
-    for mode in [1, 2, 3]:
+    for mode in [1, 2]:
         so, date = process(img2, mode)
         if so:
             return so, date
@@ -259,24 +242,22 @@ def ocr_extract(img):
 # GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
-
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
     return f"""
 <div class="global-wrap">
-    <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
-    </div>
-    <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
-        <div class="global-text">{percent}%</div>
-    </div>
+<div class="global-meta">
+<div>⚡ {percent}%</div>
+<div>⏳ {eta_text}</div>
+</div>
+<div class="global-bar">
+<div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+<div class="global-text">{percent}%</div>
+</div>
 </div>
 """
 
 # =========================
-# EXTRACT PDF
+# EXTRACT
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
@@ -288,14 +269,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
     for i in range(1, total_pages + 1):
 
-        images = convert_from_bytes(
-            pdf_bytes,
-            dpi=130,
-            first_page=i,
-            last_page=i
-        )
-
-        img = images[0]
+        img = convert_from_bytes(pdf_bytes, dpi=130, first_page=i, last_page=i)[0]
 
         processed_pages[0] += 1
 
@@ -338,17 +312,11 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
     if st.session_state.processing:
-
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -366,33 +334,20 @@ if uploaded_files:
 
             for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(
-                    f, boxes[i], global_box,
-                    start_time, processed_pages, total_pages_all
-                )
+                data = extract_pdf(f, boxes[i], global_box,
+                                   start_time, processed_pages, total_pages_all)
 
                 df = pd.DataFrame(data)
                 df.insert(0, "STT", range(1, len(df)+1))
 
-                sheet_name = os.path.splitext(f.name)[0][:31]
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+                df.to_excel(writer, sheet_name=f.name[:31], index=False)
 
         wb = load_workbook(tmp_excel.name)
-
-        thin = Side(style='thin')
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         for ws in wb.worksheets:
             for col in ws.columns:
                 max_len = max(len(str(c.value)) if c.value else 0 for c in col)
                 ws.column_dimensions[col[0].column_letter].width = max_len + 3
-
-            for row in ws.iter_rows():
-                for cell in row:
-                    cell.border = border
-
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
 
         wb.save(tmp_excel.name)
 
@@ -406,20 +361,12 @@ if uploaded_files:
 # =========================
 if st.session_state.done:
 
-    st.success("🎉 HOÀN THÀNH !!!")
-
     with open(st.session_state.excel_file, "rb") as f:
-        data = f.read()
+        b64 = base64.b64encode(f.read()).decode()
 
-    b64 = base64.b64encode(data).decode()
+    st.markdown(f'<iframe src="data:application/octet-stream;base64,{b64}" style="display:none;"></iframe>', unsafe_allow_html=True)
 
-    st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
