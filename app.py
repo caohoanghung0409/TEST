@@ -1,49 +1,56 @@
 import streamlit as st
-import pytesseract
-from pdf2image import convert_from_bytes, pdfinfo_from_bytes
+import fitz  # PyMuPDF
 import re
 import numpy as np
 import cv2
-from io import BytesIO
+from paddleocr import PaddleOCR
 from openpyxl import Workbook
 from openpyxl.styles import Border, Side, Font
-import time
+from io import BytesIO
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="THL PDF → EXCEL FAST", layout="wide")
-st.title("🚀 THL PDF → EXCEL (FAST + STABLE)")
+st.set_page_config(page_title="FAST PDF OCR", layout="wide")
+st.title("🚀 PDF → EXCEL (PyMuPDF + PaddleOCR)")
 
 # =========================
-# REGEX (LINH HOẠT)
+# OCR ENGINE (LOAD 1 LẦN)
+# =========================
+ocr = PaddleOCR(use_angle_cls=True, lang='en')
+
+# =========================
+# REGEX
 # =========================
 SM_REGEX = re.compile(r"SM\s*[-:]?\s*\d{4}\s*\.?\s*\d{4}")
 DATE_REGEX = re.compile(r"\d{1,2}[/-]\d{1,2}[/-]\d{4}")
 
 # =========================
-# PREPROCESS NHẸ (QUAN TRỌNG SPEED)
+# IMAGE PREPROCESS (NHẸ + NHANH)
 # =========================
 def preprocess(img):
-    img = np.array(img)
 
-    # nhẹ hơn resize lớn để tăng tốc
-    img = cv2.resize(img, None, fx=1.2, fy=1.2)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img = cv2.resize(img, None, fx=1.5, fy=1.5)
 
-    # threshold đơn giản (nhanh hơn adaptive)
-    gray = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)[1]
+    img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY)[1]
 
-    return gray
+    return img
 
 # =========================
-# OCR
+# OCR FUNCTION
 # =========================
-def ocr(img):
+def run_ocr(img):
+
     img = preprocess(img)
 
-    text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
+    result = ocr.ocr(img, cls=True)
+
+    text = ""
+    if result and result[0]:
+        for line in result[0]:
+            text += line[1][0] + " "
 
     sm = SM_REGEX.search(text)
     date = DATE_REGEX.search(text)
@@ -54,9 +61,11 @@ def ocr(img):
     return None, None
 
 # =========================
-# PROCESS (STREAMING - KHÔNG LOAD FULL RAM)
+# PROCESS PDF (FAST CORE)
 # =========================
-def process(file_bytes, progress_box):
+def process_pdf(file_bytes, progress_box):
+
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
 
     wb = Workbook()
     ws = wb.active
@@ -64,36 +73,25 @@ def process(file_bytes, progress_box):
 
     ws.append(["STT", "SM", "Ngày", "Trang"])
 
-    info = pdfinfo_from_bytes(file_bytes)
-    total_pages = int(info["Pages"])
-
-    start = time.time()
+    total_pages = len(doc)
     found = 0
 
-    # 🔥 xử lý từng page (tránh load all images → nhanh + ổn định)
-    for i in range(1, total_pages + 1):
+    for i in range(total_pages):
 
-        page = convert_from_bytes(
-            file_bytes,
-            dpi=100,
-            first_page=i,
-            last_page=i
-        )[0]
+        page = doc.load_page(i)
 
-        sm, date = ocr(page)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # zoom 2x
+
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+
+        sm, date = run_ocr(img)
 
         if sm and date:
             found += 1
-            ws.append([found, sm, date, i])
+            ws.append([found, sm, date, i + 1])
 
-        # progress
-        percent = int(i / total_pages * 100)
-
-        elapsed = time.time() - start
-        speed = i / elapsed if elapsed else 0
-        eta = int((total_pages - i) / speed) if speed else 0
-
-        progress_box.markdown(f"⚡ {percent}% | ETA {eta}s")
+        percent = int((i + 1) / total_pages * 100)
+        progress_box.markdown(f"⚡ {percent}% ({i+1}/{total_pages})")
 
     # =========================
     # FORMAT EXCEL
@@ -118,27 +116,26 @@ def process(file_bytes, progress_box):
 # =========================
 file = st.file_uploader("📂 Chọn PDF", type=["pdf"])
 
-if file and st.button("🚀 BẮT ĐẦU XỬ LÝ"):
+if file and st.button("🚀 START"):
 
-    progress_box = st.empty()
+    progress = st.empty()
 
     file_bytes = file.read()
 
-    with st.spinner("Đang xử lý OCR..."):
+    with st.spinner("Đang xử lý PyMuPDF + PaddleOCR..."):
 
-        result, count = process(file_bytes, progress_box)
+        result, count = process_pdf(file_bytes, progress)
 
     # =========================
     # RESULT
     # =========================
     if count == 0:
-        st.error("❌ KHÔNG LẤY ĐƯỢC DATA")
-        st.warning("👉 PDF có thể scan mờ hoặc format khác SM / DATE")
+        st.error("❌ Không đọc được dữ liệu (PDF quá mờ hoặc không đúng format)")
     else:
-        st.success(f"🎉 HOÀN THÀNH - {count} DÒNG DATA")
+        st.success(f"🎉 DONE - {count} dòng dữ liệu")
 
         st.download_button(
-            "📥 TẢI EXCEL",
+            "📥 DOWNLOAD EXCEL",
             data=result,
             file_name="output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
