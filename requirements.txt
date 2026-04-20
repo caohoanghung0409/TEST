@@ -1,7 +1,7 @@
 streamlit
-pytesseract
-pdf2image
-pandas
-openpyxl
+pymupdf
+paddleocr
 opencv-python-headless
+openpyxl
 numpy
+paddlepaddle
