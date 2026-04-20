@@ -186,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (FIX CHUẨN)
+# OCR (TỐI ƯU CHUẨN)
 # =========================
 def ocr_extract(img):
 
@@ -199,31 +199,43 @@ def ocr_extract(img):
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)
 
-    # Cắt đoạn sau chữ "Số"
-    m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,60})", text)
+    # Lấy block sau "Số"
+    m = re.search(r"S[oố0O6]\s*[:\-]?\s*(.{0,80})", text)
     if not m:
         return None, None
 
     block = m.group(1)
 
-    # Cắt trước chữ Ngày
+    # Cắt trước "Ngày"
     block = re.split(r"Ngày|Ngay|\d{2}/\d{2}/\d{4}", block)[0]
 
-    # Lấy đúng format mã
-    codes = re.findall(r"[A-Z0-9]{2,3}\d{4}\.\d{4}", block)
+    # Bắt rộng
+    raw_codes = re.findall(r"[A-Z0-9]{1,4}[\s\-\.]?\d{4}[\.\-]?\d{4}", block)
 
-    if not codes:
+    clean_codes = []
+
+    for c in raw_codes:
+        c = c.upper()
+
+        c = c.replace("O", "0")
+        c = c.replace("I", "1")
+
+        c = re.sub(r"[^A-Z0-9./]", "", c)
+
+        m2 = re.search(r"([A-Z]{1,3})(\d{4})[.\-]?(\d{4})", c)
+        if m2:
+            c = f"{m2.group(1)}{m2.group(2)}.{m2.group(3)}"
+            clean_codes.append(c)
+
+    if not clean_codes:
         return None, None
 
-    so = "/".join(codes)
+    so = "/".join(clean_codes)
 
     date_match = re.search(r"\d{2}/\d{2}/\d{4}", text)
     date = date_match.group(0) if date_match else None
 
-    if so and date:
-        return so, date
-
-    return None, None
+    return so, date
 
 # =========================
 # GLOBAL BAR
@@ -246,7 +258,7 @@ def render_global_bar(percent, speed, eta):
 """
 
 # =========================
-# EXTRACT PDF (TỐI ƯU)
+# EXTRACT PDF
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
@@ -290,12 +302,11 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 
         so, date = ocr_extract(img)
 
-        if so and date:
-            results.append({
-                "Số": so,
-                "Ngày": date,
-                "Trang": i
-            })
+        results.append({
+            "Số": so if so else "",
+            "Ngày": date if date else "",
+            "Trang": i
+        })
 
     return results
 
@@ -342,13 +353,11 @@ if uploaded_files:
                     start_time, processed_pages, total_pages_all
                 )
 
-                if data:
-                    df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
+                df = pd.DataFrame(data)
+                df.insert(0, "STT", range(1, len(df)+1))
 
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                sheet_name = os.path.splitext(f.name)[0][:31]
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
 
