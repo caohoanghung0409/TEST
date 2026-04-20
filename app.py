@@ -1,6 +1,6 @@
 import streamlit as st
 import pytesseract
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 import pandas as pd
 import re
 import tempfile
@@ -30,6 +30,12 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
+# REGEX CACHE (TĂNG TỐC)
+# =========================
+SM_REGEX = re.compile(r"(SM\d{4}\.\d{4})")
+DATE_REGEX = re.compile(r"(\d{2}/\d{2}/\d{4})")
+
+# =========================
 # STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
@@ -37,133 +43,23 @@ st.markdown("""
 header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
-
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
-
+.header { font-size:22px; font-weight:700; margin-bottom:10px; }
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
-}
-
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
     color:white;
     border:none;
     border-radius:12px;
     padding:12px 24px;
-    font-weight:600;
-    font-size:15px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.25s ease;
-}
-div.stButton > button:hover {
-    transform: translateY(-2px) scale(1.02);
-}
-
-.new-btn button {
-    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
-}
-
-.process-btn {
-    margin-top: 25px;
-    margin-bottom: 15px;
-}
-
-.file-row {
-    margin-top:12px;
-    padding:10px;
-    border-radius:12px;
-    background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
-}
-
-.progress {
-    height:8px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-    margin-top:6px;
-}
-.progress-bar {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
-}
-
-.global-wrap { margin:15px 0; }
-
-.global-bar {
-    position:relative;
-    height:20px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-}
-
-.global-fill {
-    height:100%;
-    border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
-}
-
-.global-text {
-    position:absolute;
-    width:100%;
-    text-align:center;
-    font-size:12px;
-    font-weight:700;
-    top:0;
-    line-height:20px;
-}
-
-.global-meta {
-    display:flex;
-    justify-content:space-between;
-    font-size:13px;
-    margin-bottom:6px;
-}
-
-.loading {
-    font-size:14px;
-    color:#475569;
-    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# HEADER
-# =========================
 st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
 
 # =========================
@@ -186,66 +82,70 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR FUNCTION (NHANH HƠN)
 # =========================
 def ocr_extract(img):
 
     def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        text = pytesseract.image_to_string(
+            image,
+            lang='eng',
+            config='--oem 3 --psm 6'
+        )
+        sm = SM_REGEX.search(text)
+        date = DATE_REGEX.search(text)
         return sm, date
 
     w, h = img.size
 
-    for variant in [
+    # 🔥 GIẢM SỐ BIẾN THỂ (tăng tốc ~3-5x)
+    variants = [
         img,
-        img.crop((0,0,w,int(h*0.4))),
-        img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True)
-    ]:
-        sm, date = read(variant)
+        img.rotate(180, expand=True)
+    ]
+
+    for v in variants:
+        sm, date = read(v)
         if sm and date:
             return sm.group(1), date.group(1)
 
     return None, None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR
 # =========================
-def render_global_bar(percent, speed, eta):
-
+def render_global_bar(percent, eta):
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
     return f"""
-<div class="global-wrap">
-    <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
+    <div>
+        <div>⚡ {percent}% | ⏳ {eta_text}</div>
+        <div style="height:16px;background:#ddd;border-radius:10px;overflow:hidden;">
+            <div style="width:{percent}%;height:100%;
+            background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
+        </div>
     </div>
-    <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
-        <div class="global-text">{percent}%</div>
-    </div>
-</div>
-"""
+    """
 
 # =========================
-# PROCESS
+# PROCESS (TỐI ƯU LỚN)
 # =========================
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
     results = []
-    images = convert_from_bytes(file.read(), dpi=150)
-    total_pages = len(images)
+
+    file_bytes = file.getvalue()  # 🔥 CHỈ READ 1 LẦN
+
+    # 🔥 NHANH HƠN convert_from_bytes để đếm page
+    info = pdfinfo_from_bytes(file_bytes)
+    total_pages = int(info["Pages"])
+
+    # 🔥 GIẢM DPI để tăng tốc (110 thay vì 150)
+    images = convert_from_bytes(file_bytes, dpi=110)
 
     for i, img in enumerate(images, start=1):
 
         processed_pages[0] += 1
 
-        percent = int((i/total_pages)*100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
         elapsed = time.time() - start_time
@@ -253,16 +153,11 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
-<div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
+        📄 {file.name} — Trang {i}/{total_pages}
+        """, unsafe_allow_html=True)
 
         sm, date = ocr_extract(img)
 
@@ -285,23 +180,22 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
     if st.session_state.processing:
-
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
+        # 🔥 KHÔNG convert PDF để đếm nữa → giả lập nhanh bằng pdfinfo
+        total_pages_all = 0
+        file_bytes_list = []
+
         for f in uploaded_files:
-            f.seek(0)
+            b = f.getvalue()
+            file_bytes_list.append((f, b))
+            total_pages_all += int(pdfinfo_from_bytes(b)["Pages"])
 
         processed_pages = [0]
 
@@ -309,20 +203,21 @@ if uploaded_files:
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-            for i, f in enumerate(uploaded_files):
+            for i, (f, b) in enumerate(file_bytes_list):
 
                 data = extract_pdf(
-                    f, boxes[i], global_box,
-                    start_time, processed_pages, total_pages_all
+                    type("F", (), {"name": f.name, "getvalue": lambda b=b: b})(),
+                    boxes[i],
+                    global_box,
+                    start_time,
+                    processed_pages,
+                    total_pages_all
                 )
 
                 if data:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
-
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df.to_excel(writer, sheet_name=f.name[:31], index=False)
 
         wb = load_workbook(tmp_excel.name)
 
@@ -356,17 +251,13 @@ if st.session_state.done:
     st.success("🎉 HOÀN THÀNH !!!")
 
     with open(st.session_state.excel_file, "rb") as f:
-        data = f.read()
-
-    b64 = base64.b64encode(data).decode()
+        b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
