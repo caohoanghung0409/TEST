@@ -7,6 +7,8 @@ import tempfile
 import os
 import time
 import base64
+import cv2
+import numpy as np
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -104,17 +106,24 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR NHANH (KHÔNG CV2)
+# OCR NHANH (CV2)
 # =========================
 def ocr_extract(img):
 
-    w, h = img.size
+    img = np.array(img)
+    h, w = img.shape[:2]
 
     # crop vùng trên
-    img = img.crop((0, 0, w, int(h * 0.35)))
+    img = img[0:int(h*0.35), :]
 
-    # resize nhẹ
-    img = img.resize((int(w * 0.7), int(h * 0.35 * 0.7)))
+    # resize nhỏ lại
+    img = cv2.resize(img, None, fx=0.7, fy=0.7)
+
+    # grayscale
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # threshold
+    _, img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY)
 
     def read(im):
         text = pytesseract.image_to_string(
@@ -126,8 +135,7 @@ def ocr_extract(img):
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
-    # chỉ 2 hướng
-    for v in [img, img.rotate(180, expand=True)]:
+    for v in [img, cv2.rotate(img, cv2.ROTATE_180)]:
         sm, date = read(v)
         if sm and date:
             return sm.group(1), date.group(1)
@@ -141,13 +149,11 @@ def extract_pdf(file, box):
 
     results = []
 
-    # DPI thấp để nhanh
-    images = convert_from_bytes(file.read(), dpi=90)
+    images = convert_from_bytes(file.read(), dpi=85)
     total = len(images)
 
     for i, img in enumerate(images, start=1):
 
-        # update nhẹ UI (không spam)
         if i % 2 == 0:
             percent = int((i/total)*100)
             box.markdown(f"""
@@ -184,8 +190,6 @@ if uploaded_files:
             st.rerun()
 
     if st.session_state.processing:
-
-        start_time = time.time()
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
