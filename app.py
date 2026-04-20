@@ -9,27 +9,14 @@ import time
 import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
+from concurrent.futures import ProcessPoolExecutor
+import cv2
+import numpy as np
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
-# =========================
-# SESSION
-# =========================
-for key in ["processing","done","clear_uploader","last_uploaded_names","excel_file"]:
-    if key not in st.session_state:
-        st.session_state[key] = False if key!="last_uploaded_names" else []
+st.title("🚀 THL PDF → EXCEL (MAX SPEED)")
 
-# =========================
-# HEADER
-# =========================
-st.title("🚀 THL PDF → EXCEL")
-
-# =========================
-# UPLOAD
-# =========================
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
@@ -37,17 +24,30 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================
-# OCR (TỐI GIẢN - NHANH)
+# OCR SIÊU NHANH
 # =========================
-def ocr_extract(img):
+def ocr_fast(img):
 
-    # 👉 chỉ lấy vùng trên
-    w, h = img.size
-    img_crop = img.crop((0, 0, w, int(h * 0.4)))
+    # 👉 convert PIL -> OpenCV
+    img = np.array(img)
 
-    def read(image):
+    h, w = img.shape[:2]
+
+    # 👉 crop vùng trên
+    img = img[0:int(h*0.35), :]
+
+    # 👉 resize nhỏ lại (giảm load)
+    img = cv2.resize(img, None, fx=0.7, fy=0.7)
+
+    # 👉 grayscale
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 👉 threshold tăng độ rõ chữ
+    _, img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY)
+
+    def read(im):
         text = pytesseract.image_to_string(
-            image,
+            im,
             lang='eng',
             config='--oem 3 --psm 6'
         )
@@ -55,42 +55,31 @@ def ocr_extract(img):
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
-    # 👉 CHỈ 2 HƯỚNG
-    for v in [img_crop, img_crop.rotate(180, expand=True)]:
+    # 👉 chỉ 2 hướng
+    for v in [img, cv2.rotate(img, cv2.ROTATE_180)]:
         sm, date = read(v)
         if sm and date:
             return sm.group(1), date.group(1)
 
     return None, None
 
+
 # =========================
-# PROCESS FILE
+# XỬ LÝ 1 TRANG (song song)
 # =========================
-def process_file(file, progress_bar):
+def process_page(args):
+    img, index = args
 
-    results = []
+    sm, date = ocr_fast(img)
 
-    # 👉 CHỈ convert 1 lần (DPI thấp)
-    images = convert_from_bytes(file.read(), dpi=90)
+    if sm and date:
+        return {
+            "SM": sm,
+            "Ngày": date,
+            "Trang": index + 1
+        }
+    return None
 
-    total = len(images)
-
-    for i, img in enumerate(images):
-
-        # 👉 update UI mỗi 3 trang (giảm lag)
-        if i % 3 == 0:
-            progress_bar.progress(int((i+1)/total*100))
-
-        sm, date = ocr_extract(img)
-
-        if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date,
-                "Trang": i+1
-            })
-
-    return results
 
 # =========================
 # MAIN
@@ -108,12 +97,22 @@ if uploaded_files:
             for f in uploaded_files:
 
                 st.write(f"📄 Đang xử lý: {f.name}")
-                progress_bar = st.progress(0)
 
-                data = process_file(f, progress_bar)
+                # 🔥 DPI thấp + nhanh
+                images = convert_from_bytes(f.read(), dpi=85)
 
-                if data:
-                    df = pd.DataFrame(data)
+                # 👉 chạy song song
+                with ProcessPoolExecutor() as executor:
+                    results = list(executor.map(
+                        process_page,
+                        [(img, i) for i, img in enumerate(images)]
+                    ))
+
+                # lọc None
+                results = [r for r in results if r]
+
+                if results:
+                    df = pd.DataFrame(results)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
