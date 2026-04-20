@@ -15,69 +15,70 @@ from openpyxl.styles import Border, Side, Font
 # =========================
 st.set_page_config(page_title="THL PDF → EXCEL", layout="wide")
 
-# =========================
-# SESSION
-# =========================
-if "file_bytes" not in st.session_state:
-    st.session_state.file_bytes = None
-if "file_name" not in st.session_state:
-    st.session_state.file_name = None
-if "result" not in st.session_state:
-    st.session_state.result = None
+st.title("🚀 THL PDF → EXCEL (OCR FIXED)")
 
 # =========================
-# UI HEADER
+# REGEX (LINH HOẠT HƠN)
 # =========================
-st.markdown("## 🚀 THL PDF → EXCEL")
-
-files = st.file_uploader("📂 Chọn PDF", type=["pdf"], accept_multiple_files=False)
+SM_REGEX = re.compile(r"SM\s*[-:]?\s*\d{4}\s*\.?\s*\d{4}")
+DATE_REGEX = re.compile(r"\d{1,2}[/-]\d{1,2}[/-]\d{4}")
 
 # =========================
-# OCR IMPROVED
+# OCR (BẢN MẠNH - FIX TRỐNG DATA)
 # =========================
-SM_REGEX = re.compile(r"(SM\d{4}\.\d{4})")
-DATE_REGEX = re.compile(r"(\d{2}/\d{2}/\d{4})")
-
-
-def preprocess(img):
-    """🔥 tăng OCR accuracy"""
-    img = np.array(img)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    return gray
-
-
 def ocr(img):
 
-    img = preprocess(img)
+    img = np.array(img)
 
-    text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
+    # 🔥 upscale giúp đọc rõ hơn
+    img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 🔥 tăng chất lượng ảnh
+    gray = cv2.bilateralFilter(gray, 9, 75, 75)
+    gray = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        2
+    )
+
+    config = "--oem 3 --psm 6"
+
+    text = pytesseract.image_to_string(gray, config=config)
+
+    # 🔥 debug (bật nếu cần)
+    # st.text(text)
 
     sm = SM_REGEX.search(text)
     date = DATE_REGEX.search(text)
 
     if sm and date:
-        return sm.group(1), date.group(1)
+        return sm.group(), date.group()
 
-    # fallback rotate
-    img_rot = cv2.rotate(img, cv2.ROTATE_180)
-    text2 = pytesseract.image_to_string(img_rot, config="--oem 3 --psm 6")
+    # 🔥 fallback rotate
+    rot = cv2.rotate(gray, cv2.ROTATE_180)
+    text2 = pytesseract.image_to_string(rot, config=config)
 
     sm = SM_REGEX.search(text2)
     date = DATE_REGEX.search(text2)
 
     if sm and date:
-        return sm.group(1), date.group(1)
+        return sm.group(), date.group()
 
     return None, None
 
 
 # =========================
-# PROCESS
+# PROCESS PDF
 # =========================
-def process_pdf(file_bytes, file_name, progress_box):
+def process_pdf(file_bytes, progress_box):
 
     pages = convert_from_bytes(file_bytes, dpi=150)
+
     wb = Workbook()
     ws = wb.active
     ws.title = "DATA"
@@ -86,18 +87,22 @@ def process_pdf(file_bytes, file_name, progress_box):
 
     total = len(pages)
 
+    found = 0
+
     for i, img in enumerate(pages, start=1):
 
         percent = int(i / total * 100)
-
         progress_box.markdown(f"⏳ {percent}% ({i}/{total})")
 
         sm, date = ocr(img)
 
         if sm and date:
-            ws.append([i, sm, date, i])
+            ws.append([found + 1, sm, date, i])
+            found += 1
 
-    # format
+    # =========================
+    # FIX FORMAT EXCEL
+    # =========================
     thin = Side(style="thin")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -107,42 +112,43 @@ def process_pdf(file_bytes, file_name, progress_box):
             if row[0].row == 1:
                 c.font = Font(bold=True)
 
-    return wb
+    return wb, found
 
 
 # =========================
-# RUN
+# UI
 # =========================
-if files and st.button("🚀 BẮT ĐẦU"):
+uploaded = st.file_uploader("📂 Chọn file PDF", type=["pdf"])
+
+if uploaded and st.button("🚀 Bắt đầu xử lý"):
 
     progress_box = st.empty()
 
-    file_bytes = files.read()
+    file_bytes = uploaded.read()
 
-    file_name = files.name.replace(".pdf", ".xlsx")
+    with st.spinner("Đang OCR..."):
 
-    with st.spinner("Đang xử lý OCR..."):
+        wb, count = process_pdf(file_bytes, progress_box)
 
-        wb = process_pdf(file_bytes, files.name, progress_box)
-
-        # save to buffer (KHÔNG dùng temp file)
+        # =========================
+        # SAVE TO MEMORY (KHÔNG LỖI DOWNLOAD)
+        # =========================
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
 
-        st.session_state.result = buffer
-        st.session_state.file_name = file_name
+    # =========================
+    # RESULT
+    # =========================
+    if count == 0:
+        st.error("❌ KHÔNG ĐỌC ĐƯỢC DATA TRONG PDF")
+        st.warning("👉 PDF có thể là scan mờ hoặc format khác SM / DATE")
+    else:
+        st.success(f"🎉 DONE - LẤY ĐƯỢC {count} DÒNG DATA")
 
-# =========================
-# DOWNLOAD (CHUẨN STREAMLIT)
-# =========================
-if st.session_state.result:
-
-    st.success("🎉 HOÀN THÀNH !!!")
-
-    st.download_button(
-        label="📥 TẢI FILE EXCEL",
-        data=st.session_state.result,
-        file_name=st.session_state.file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            "📥 TẢI EXCEL",
+            data=buffer,
+            file_name="output.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
