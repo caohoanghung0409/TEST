@@ -11,20 +11,19 @@ from openpyxl import load_workbook
 # CONFIG
 # =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
-
-st.markdown("## 🚀 THL PDF → EXCEL (ANCHOR: PHIẾU GIAO HÀNG)")
+st.title("🚀 THL PDF → EXCEL (STABLE VERSION)")
 
 # =========================
 # UPLOAD
 # =========================
 uploaded_files = st.file_uploader(
-    "📂 Chọn file PDF",
+    "📂 Upload PDF",
     type=["pdf"],
     accept_multiple_files=True
 )
 
 # =========================
-# CLEAN FUNCTION
+# CLEAN
 # =========================
 def clean(x):
     if not x:
@@ -32,7 +31,7 @@ def clean(x):
     return re.sub(r"\s+", "", x)
 
 # =========================
-# OCR + ANCHOR EXTRACTION
+# OCR + ANCHOR
 # =========================
 def extract_from_page(img):
 
@@ -45,116 +44,126 @@ def extract_from_page(img):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     # =========================
-    # 1. FIND ANCHOR
+    # FIND ANCHOR
     # =========================
     start_idx = -1
-
     for i, line in enumerate(lines):
         if "PHIẾU GIAO HÀNG" in line.upper():
             start_idx = i
             break
 
-    # nếu không có anchor → fallback toàn trang
-    if start_idx == -1:
-        target_lines = lines
-    else:
-        target_lines = lines[start_idx:]
+    if start_idx != -1:
+        lines = lines[start_idx:]
 
-    zone_text = " ".join(target_lines)
+    zone_text = " ".join(lines)
 
     # =========================
-    # 2. EXTRACT DATA
+    # EXTRACT
     # =========================
     sm = re.search(r"(SM\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
     pr = re.search(r"(PR\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
     so = re.search(r"(SO\s*\d{3,5}[\.\s]?\d{3,5})", zone_text)
     date = re.search(r"(\d{2}/\d{2}/\d{4})", zone_text)
 
-    return (
-        clean(sm.group(1)) if sm else None,
-        clean(pr.group(1)) if pr else None,
-        clean(so.group(1)) if so else None,
-        date.group(1) if date else None
-    )
+    return {
+        "SM": clean(sm.group(1)) if sm else None,
+        "PR": clean(pr.group(1)) if pr else None,
+        "SO": clean(so.group(1)) if so else None,
+        "Ngày": date.group(1) if date else None
+    }
 
 # =========================
-# EXTRACT PDF
+# PROCESS PDF
 # =========================
 def extract_pdf(file):
-
-    results = []
 
     pdf_bytes = file.getvalue()
     images = convert_from_bytes(pdf_bytes, dpi=120)
 
+    results = []
+
     for img in images:
 
-        sm, pr, so, date = extract_from_page(img)
+        row = extract_from_page(img)
 
-        # chỉ ghi khi có data thật
-        if sm or pr or so or date:
-
-            results.append({
-                "SM": sm,
-                "PR": pr,
-                "SO": so,
-                "Ngày": date
-            })
+        # chỉ append nếu có ít nhất 1 data
+        if any(row.values()):
+            results.append(row)
 
     return results
 
 # =========================
-# RUN
+# RUN BUTTON
 # =========================
 if uploaded_files:
 
     if st.button("🚀 Bắt đầu xử lý", type="primary"):
 
-        with st.spinner("⏳ Đang xử lý PDF..."):
+        all_data = []
+        has_data = False
 
-            excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        for f in uploaded_files:
 
-            with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
+            data = extract_pdf(f)
 
-                for f in uploaded_files:
+            if data:
+                has_data = True
+                df = pd.DataFrame(data)
 
-                    data = extract_pdf(f)
+                if not df.empty:
+                    df.insert(0, "STT", range(1, len(df)+1))
+                    df["FILE"] = f.name
 
-                    df = pd.DataFrame(data)
+                all_data.append((f.name, df))
 
-                    if not df.empty:
-                        df.insert(0, "STT", range(1, len(df)+1))
+        # =========================
+        # ANTI EMPTY FILE CRASH
+        # =========================
+        if not has_data:
+            st.error("❌ Không tìm thấy dữ liệu trong PDF")
+            st.stop()
 
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+        # =========================
+        # CREATE EXCEL SAFE
+        # =========================
+        excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-            # =========================
-            # AUTO WIDTH
-            # =========================
-            wb = load_workbook(excel_file.name)
+        with pd.ExcelWriter(excel_file.name, engine='openpyxl') as writer:
 
-            for ws in wb.worksheets:
-                for col in ws.columns:
-                    max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                    ws.column_dimensions[col[0].column_letter].width = max_len + 3
+            wrote = False
 
-            wb.save(excel_file.name)
+            for name, df in all_data:
 
-            st.session_state.file = excel_file.name
-            st.success("🎉 Xử lý xong!")
+                if df is not None and not df.empty:
+                    wrote = True
+                    df.to_excel(writer, sheet_name=name[:31], index=False)
 
-# =========================
-# DOWNLOAD
-# =========================
-if "file" in st.session_state:
+            # 🔥 GUARANTEE SHEET (ANTI CRASH OPENPYXL)
+            if not wrote:
+                pd.DataFrame([{"ERROR": "NO VALID DATA"}]).to_excel(writer, index=False)
 
-    with open(st.session_state.file, "rb") as f:
-        data = f.read()
+        # =========================
+        # AUTO WIDTH
+        # =========================
+        wb = load_workbook(excel_file.name)
 
-    b64 = base64.b64encode(data).decode()
+        for ws in wb.worksheets:
+            for col in ws.columns:
+                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
-    st.markdown(f"""
+        wb.save(excel_file.name)
+
+        # =========================
+        # DOWNLOAD
+        # =========================
+        with open(excel_file.name, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+
+        st.success("🎉 Xử lý xong!")
+
+        st.markdown(f"""
         <a href="data:application/octet-stream;base64,{b64}" download="result.xlsx">
-            📥 Tải Excel
+            📥 Download Excel
         </a>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
