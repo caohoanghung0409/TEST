@@ -3,188 +3,146 @@ import pytesseract
 from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 import pandas as pd
 import re
-import tempfile
 import time
-import base64
+import numpy as np
+import cv2
+from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Border, Side, Font
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
+st.set_page_config(page_title="THL PDF → EXCEL", layout="wide")
 
 # =========================
 # SESSION
 # =========================
-if "done" not in st.session_state:
-    st.session_state.done = False
-if "file_path" not in st.session_state:
-    st.session_state.file_path = None
+if "file_bytes" not in st.session_state:
+    st.session_state.file_bytes = None
+if "file_name" not in st.session_state:
+    st.session_state.file_name = None
+if "result" not in st.session_state:
+    st.session_state.result = None
 
 # =========================
-# STYLE (GIỮ GIAO DIỆN CŨ)
+# UI HEADER
 # =========================
-st.markdown("""
-<style>
-header, #MainMenu, footer {visibility: hidden;}
-.block-container {padding-top: 0.5rem !important;}
-.stApp { background: #f1f5f9; }
+st.markdown("## 🚀 THL PDF → EXCEL")
 
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
-
-[data-testid="stFileUploader"] {
-    border: 2px dashed #93c5fd;
-    padding: 25px;
-    border-radius: 18px;
-    background: white;
-}
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
+files = st.file_uploader("📂 Chọn PDF", type=["pdf"], accept_multiple_files=False)
 
 # =========================
-# REGEX
+# OCR IMPROVED
 # =========================
 SM_REGEX = re.compile(r"(SM\d{4}\.\d{4})")
 DATE_REGEX = re.compile(r"(\d{2}/\d{2}/\d{4})")
 
-# =========================
-# OCR
-# =========================
+
+def preprocess(img):
+    """🔥 tăng OCR accuracy"""
+    img = np.array(img)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    return gray
+
+
 def ocr(img):
+
+    img = preprocess(img)
+
     text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
+
     sm = SM_REGEX.search(text)
     date = DATE_REGEX.search(text)
+
     if sm and date:
         return sm.group(1), date.group(1)
+
+    # fallback rotate
+    img_rot = cv2.rotate(img, cv2.ROTATE_180)
+    text2 = pytesseract.image_to_string(img_rot, config="--oem 3 --psm 6")
+
+    sm = SM_REGEX.search(text2)
+    date = DATE_REGEX.search(text2)
+
+    if sm and date:
+        return sm.group(1), date.group(1)
+
     return None, None
 
-# =========================
-# PROCESS PDF
-# =========================
-def process(files, progress_box):
 
+# =========================
+# PROCESS
+# =========================
+def process_pdf(file_bytes, file_name, progress_box):
+
+    pages = convert_from_bytes(file_bytes, dpi=150)
     wb = Workbook()
-    wb.remove(wb.active)
+    ws = wb.active
+    ws.title = "DATA"
 
-    global_count = 0
+    ws.append(["STT", "SM", "Ngày", "Trang"])
 
-    total_pages = 0
-    file_bytes = []
+    total = len(pages)
 
-    for f in files:
-        b = f.getvalue()
-        file_bytes.append((f.name, b))
-        total_pages += int(pdfinfo_from_bytes(b)["Pages"])
+    for i, img in enumerate(pages, start=1):
 
-    start = time.time()
+        percent = int(i / total * 100)
 
-    for name, b in file_bytes:
+        progress_box.markdown(f"⏳ {percent}% ({i}/{total})")
 
-        ws = wb.create_sheet(name[:31])
+        sm, date = ocr(img)
 
-        pages = convert_from_bytes(b, dpi=110)
-
-        ws.append(["STT", "SM", "Ngày", "Trang"])
-
-        for i, img in enumerate(pages, start=1):
-
-            global_count += 1
-
-            percent = int(global_count / total_pages * 100)
-
-            elapsed = time.time() - start
-            speed = global_count / elapsed if elapsed else 0
-            eta = int((total_pages - global_count) / speed) if speed else 0
-
-            progress_box.markdown(f"""
-            <div style="background:#ddd;height:18px;border-radius:10px;">
-                <div style="width:{percent}%;height:100%;
-                background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
-            </div>
-            <p>⚡ {percent}% | ETA {eta}s</p>
-            """, unsafe_allow_html=True)
-
-            sm, date = ocr(img)
-
-            if sm and date:
-                ws.append([i, sm, date, i])
+        if sm and date:
+            ws.append([i, sm, date, i])
 
     # format
     thin = Side(style="thin")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    for ws in wb.worksheets:
-        for row in ws.iter_rows():
-            for c in row:
-                c.border = border
-                if row[0].row == 1:
-                    c.font = Font(bold=True)
+    for row in ws.iter_rows():
+        for c in row:
+            c.border = border
+            if row[0].row == 1:
+                c.font = Font(bold=True)
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    wb.save(tmp.name)
+    return wb
 
-    return tmp.name
 
 # =========================
-# UI
+# RUN
 # =========================
-files = st.file_uploader("📂 Chọn PDF", type=["pdf"], accept_multiple_files=True)
+if files and st.button("🚀 BẮT ĐẦU"):
 
-progress_box = st.empty()
+    progress_box = st.empty()
 
-if files and st.button("🚀 Bắt đầu xử lý"):
+    file_bytes = files.read()
 
-    path = process(files, progress_box)
+    file_name = files.name.replace(".pdf", ".xlsx")
 
-    st.session_state.file_path = path
-    st.session_state.done = True
-    st.rerun()
+    with st.spinner("Đang xử lý OCR..."):
+
+        wb = process_pdf(file_bytes, files.name, progress_box)
+
+        # save to buffer (KHÔNG dùng temp file)
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        st.session_state.result = buffer
+        st.session_state.file_name = file_name
 
 # =========================
-# DOWNLOAD AUTO
+# DOWNLOAD (CHUẨN STREAMLIT)
 # =========================
-if st.session_state.done:
+if st.session_state.result:
 
     st.success("🎉 HOÀN THÀNH !!!")
 
-    with open(st.session_state.file_path, "rb") as f:
-        data = f.read()
-
-    b64 = base64.b64encode(data).decode()
-
-    # =========================
-    # AUTO DOWNLOAD (JS CLICK)
-    # =========================
-    download_html = f"""
-    <a id="download_link"
-       href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-       download="output.xlsx"></a>
-
-    <script>
-        document.getElementById('download_link').click();
-    </script>
-    """
-
-    st.markdown(download_html, unsafe_allow_html=True)
-
     st.download_button(
-        "📥 Download lại file",
-        data=data,
-        file_name="output.xlsx"
+        label="📥 TẢI FILE EXCEL",
+        data=st.session_state.result,
+        file_name=st.session_state.file_name,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
