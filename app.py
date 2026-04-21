@@ -186,23 +186,37 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (4 HƯỚNG)
+# OCR SIÊU NHANH (KHÔNG 90/270)
 # =========================
 def ocr_extract(img):
 
     def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+        text = pytesseract.image_to_string(
+            image,
+            lang='eng',
+            config='--oem 3 --psm 6 -c tessedit_char_whitelist=SM0123456789./'
+        )
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
     w, h = img.size
 
+    # 🚀 scan nhanh (crop trên)
+    top = img.crop((0, 0, w, int(h * 0.45)))
+
+    for variant in [
+        top,
+        top.rotate(180, expand=True)
+    ]:
+        sm, date = read(variant)
+        if sm and date:
+            return sm.group(1), date.group(1)
+
+    # 🛟 fallback cứu dữ liệu
     for variant in [
         img,
-        img.crop((0,0,w,int(h*0.4))),
-        img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4)))
+        img.rotate(180, expand=True)
     ]:
         sm, date = read(variant)
         if sm and date:
@@ -214,9 +228,7 @@ def ocr_extract(img):
 # GLOBAL BAR
 # =========================
 def render_global_bar(percent, speed, eta):
-
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
@@ -236,7 +248,7 @@ def render_global_bar(percent, speed, eta):
 def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
 
     results = []
-    images = convert_from_bytes(file.read(), dpi=150)
+    images = convert_from_bytes(file.read(), dpi=120)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
@@ -284,11 +296,9 @@ if uploaded_files:
     if not st.session_state.processing and not st.session_state.done:
 
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
-
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
@@ -305,7 +315,7 @@ if uploaded_files:
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-        has_data = False  # 🔥 FIX LỖI
+        has_data = False
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
@@ -318,15 +328,12 @@ if uploaded_files:
 
                 if data:
                     has_data = True
-
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # 🔥 nếu không có dữ liệu vẫn tạo file
             if not has_data:
                 df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
                 df.to_excel(writer, sheet_name="NO_DATA", index=False)
