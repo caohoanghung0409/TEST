@@ -6,25 +6,28 @@ import io
 
 st.set_page_config(page_title="Trích xuất PDF Tiền Phong", layout="wide")
 
-st.title("⚡ Xử lý nhanh Phiếu Nhựa Tiền Phong")
-st.write("Phiên bản tối ưu tốc độ, không dùng OCR để tránh treo máy.")
+st.title("🚀 Công cụ trích xuất dữ liệu Nhựa Tiền Phong")
+st.write("Cơ chế: Vét cạn ký tự (Chống lỗi font và khoảng trắng do scan)")
 
-uploaded_file = st.file_uploader("Chọn file PDF", type="pdf")
+uploaded_file = st.file_uploader("Upload file PDF", type="pdf")
 
-def get_clean_data(text_raw):
-    # Chuyển về chữ hoa và xóa các khoảng trắng thừa/xuống dòng dính liền
-    text = " ".join(text_raw.split()).upper()
+def extract_advanced(text_raw):
+    # Bước 1: Xóa sạch mọi loại khoảng trắng, xuống dòng để dồn chữ thành 1 khối duy nhất
+    # Điều này giúp trị dứt điểm lỗi chữ bị rời rạc kiểu "P R 2 6 0 4"
+    text_compact = re.sub(r'\s+', '', text_raw).upper()
     
-    # ĐIỀU KIỆN LẤY TRANG: Chỉ cần chứa tên công ty hoặc địa chỉ đặc trưng
-    if "NHỰA THIẾU NIÊN TIỀN PHONG" in text or "ĐỒNG AN 2" in text or "XÔ VIẾT NGHỆ TĨNH" in text:
+    # Bước 2: Kiểm tra tiêu đề (Tìm từ khóa trong khối chữ đã dồn)
+    keywords = ["NHỰATHIẾUNIÊNTIỀNPHONG", "NHUATHIEUNIENTIENPHONG", "ĐỒNGAN2", "DONGAN2"]
+    if any(kw in text_compact for kw in keywords):
         
-        # 1. Trích xuất Ngày (dd/mm/yyyy)
-        date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+        # 1. Trích xuất Ngày (Tìm trong text_raw để lấy định dạng dd/mm/yyyy chuẩn)
+        date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_raw)
         ngay = date_match.group(1) if date_match else ""
 
-        # 2. Trích xuất PR và SO (Tìm độc lập rồi ghép lại)
-        pr_match = re.search(r"PR\s?(\d{4}[\d\.]*)", text)
-        so_match = re.search(r"SO\s?(\d{4}[\d\.]*)", text)
+        # 2. Trích xuất PR và SO từ khối chữ dồn
+        # Tìm PR theo sau là 4 số năm (2604) và các số/dấu chấm tiếp theo
+        pr_match = re.search(r"PR(260[3-4][\d\.]*)", text_compact)
+        so_match = re.search(r"SO(260[3-4][\d\.]*)", text_compact)
         
         pr_val = f"PR{pr_match.group(1)}" if pr_match else ""
         so_val = f"SO{so_match.group(1)}" if so_match else ""
@@ -35,45 +38,44 @@ def get_clean_data(text_raw):
         else:
             pr_so_final = pr_val if pr_val else so_val
 
-        # 3. Trích xuất SM (Lấy mã SM kèm số phía sau)
-        # Regex này bắt được cả SM2604.0416 hoặc SM2604,0416
-        sm_match = re.search(r"SM\s?(\d{4}[\d\.,]*)", text)
+        # 3. Trích xuất SM từ khối chữ dồn
+        sm_match = re.search(r"SM(260[3-4][\d\.,]*)", text_compact)
         sm_val = f"SM{sm_match.group(1).replace(',', '.')}" if sm_match else ""
 
         if sm_val or pr_so_final:
             return {"SM": sm_val, "PR/SO": pr_so_final, "NGÀY": ngay}
+            
     return None
 
 if uploaded_file:
-    with st.spinner('Đang xử lý siêu tốc...'):
+    with st.spinner('Hệ thống đang quét lớp chữ ẩn...'):
         doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-        final_list = []
+        data = []
         stt = 1
         
         for i in range(len(doc)):
             page = doc.load_page(i)
             
             # Thử đọc 0 độ
-            res = get_clean_data(page.get_text())
+            res = extract_advanced(page.get_text())
             
             # Nếu không thấy, thử xoay 180 độ
             if not res:
                 page.set_rotation(180)
-                res = get_clean_data(page.get_text())
-                
+                res = extract_advanced(page.get_text())
+            
             if res:
                 res["STT"] = stt
                 res["SỐ TRANG"] = i + 1
-                final_list.append(res)
+                data.append(res)
                 stt += 1
         
         doc.close()
 
-        if final_list:
-            df = pd.DataFrame(final_list)
-            df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]] # Sắp xếp đúng 5 cột
-            
-            st.success(f"Xử lý xong! Tìm thấy {len(df)} phiếu.")
+        if data:
+            df = pd.DataFrame(data)
+            df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]]
+            st.success(f"Tìm thấy {len(df)} phiếu!")
             st.dataframe(df, use_container_width=True)
 
             output = io.BytesIO()
@@ -87,5 +89,5 @@ if uploaded_file:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Không tìm thấy trang nào đúng tiêu đề 'Nhựa Tiền Phong'.")
-            st.info("Lưu ý: Nếu bạn bôi đen được chữ nhưng không ra kết quả, có thể lớp chữ ẩn bị lỗi. Bạn hãy dùng Chrome để 'In -> Lưu PDF' rồi upload lại nhé.")
+            st.error("Hệ thống vẫn không đọc được lớp chữ ẩn của file này.")
+            st.info("Vì file của bạn bôi đen được nhưng máy không đọc ra chữ đúng, hãy dùng cách cuối cùng: Mở PDF bằng Chrome -> Bấm Ctrl+P -> Chọn 'Save as PDF' rồi upload file mới đó lên đây.")
