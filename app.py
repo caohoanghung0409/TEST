@@ -3,98 +3,89 @@ import fitz  # PyMuPDF
 import pandas as pd
 import re
 import io
-import pytesseract
-from PIL import Image
-import numpy as np
 
-# Cấu hình giao diện
-st.set_page_config(page_title="Trích xuất PDF Tiền Phong - OCR Mode", layout="wide")
+st.set_page_config(page_title="Trích xuất PDF Tiền Phong", layout="wide")
 
-st.title("🚀 Hệ thống trích xuất Nhựa Tiền Phong (Chế độ OCR)")
-st.info("Chế độ này sẽ quét hình ảnh để đọc chữ, xử lý được cả file scan bị lỗi font hoặc bị ngược.")
+st.title("⚡ Xử lý nhanh Phiếu Nhựa Tiền Phong")
+st.write("Phiên bản tối ưu tốc độ, không dùng OCR để tránh treo máy.")
 
-uploaded_file = st.file_uploader("Upload file PDF scan của bạn", type="pdf")
+uploaded_file = st.file_uploader("Chọn file PDF", type="pdf")
 
-def process_ocr(page):
-    """Chuyển trang PDF thành ảnh và dùng OCR để đọc chữ"""
-    # Chuyển trang PDF thành ảnh (độ phân giải 300dpi để rõ nét)
-    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+def get_clean_data(text_raw):
+    # Chuyển về chữ hoa và xóa các khoảng trắng thừa/xuống dòng dính liền
+    text = " ".join(text_raw.split()).upper()
     
-    # Dùng Tesseract để đọc chữ (hỗ trợ tiếng Việt)
-    # Nếu chạy trên Streamlit Cloud, mặc định đã có sẵn tesseract
-    text = pytesseract.image_to_string(img, lang='vie+eng')
-    return text.upper()
+    # ĐIỀU KIỆN LẤY TRANG: Chỉ cần chứa tên công ty hoặc địa chỉ đặc trưng
+    if "NHỰA THIẾU NIÊN TIỀN PHONG" in text or "ĐỒNG AN 2" in text or "XÔ VIẾT NGHỆ TĨNH" in text:
+        
+        # 1. Trích xuất Ngày (dd/mm/yyyy)
+        date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+        ngay = date_match.group(1) if date_match else ""
+
+        # 2. Trích xuất PR và SO (Tìm độc lập rồi ghép lại)
+        pr_match = re.search(r"PR\s?(\d{4}[\d\.]*)", text)
+        so_match = re.search(r"SO\s?(\d{4}[\d\.]*)", text)
+        
+        pr_val = f"PR{pr_match.group(1)}" if pr_match else ""
+        so_val = f"SO{so_match.group(1)}" if so_match else ""
+        
+        pr_so_final = ""
+        if pr_val and so_val:
+            pr_so_final = f"{pr_val}/{so_val}"
+        else:
+            pr_so_final = pr_val if pr_val else so_val
+
+        # 3. Trích xuất SM (Lấy mã SM kèm số phía sau)
+        # Regex này bắt được cả SM2604.0416 hoặc SM2604,0416
+        sm_match = re.search(r"SM\s?(\d{4}[\d\.,]*)", text)
+        sm_val = f"SM{sm_match.group(1).replace(',', '.')}" if sm_match else ""
+
+        if sm_val or pr_so_final:
+            return {"SM": sm_val, "PR/SO": pr_so_final, "NGÀY": ngay}
+    return None
 
 if uploaded_file:
-    with st.spinner('Đang dùng OCR quét hình ảnh (quá trình này có thể mất vài giây mỗi trang)...'):
-        pdf_data = uploaded_file.read()
-        doc = fitz.open(stream=pdf_data, filetype="pdf")
-        
-        results = []
-        stt_counter = 1
+    with st.spinner('Đang xử lý siêu tốc...'):
+        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+        final_list = []
+        stt = 1
         
         for i in range(len(doc)):
             page = doc.load_page(i)
             
-            # Quét lần 1 (Góc 0 độ)
-            text_upper = process_ocr(page)
+            # Thử đọc 0 độ
+            res = get_clean_data(page.get_text())
             
-            # Kiểm tra tiêu đề
-            keywords = ["NHỰA THIẾU NIÊN TIỀN PHONG", "ĐỒNG AN 2", "XÔ VIẾT NGHỆ TĨNH", "HÒA PHÚ"]
-            is_valid = any(kw in text_upper for kw in keywords)
-            
-            # Nếu không thấy, xoay 180 độ và quét lại lần 2
-            if not is_valid:
+            # Nếu không thấy, thử xoay 180 độ
+            if not res:
                 page.set_rotation(180)
-                text_upper = process_ocr(page)
-                is_valid = any(kw in text_upper for kw in keywords)
-            
-            if is_valid:
-                # 1. Trích xuất Ngày
-                date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_upper)
-                ngay = date_match.group(1) if date_match else ""
-
-                # 2. Trích xuất PR/SO
-                pr_match = re.search(r"PR[\s]?(\d{4}[\d\.]*)", text_upper)
-                so_match = re.search(r"SO[\s]?(\d{4}[\d\.]*)", text_upper)
+                res = get_clean_data(page.get_text())
                 
-                pr_val = pr_match.group(0).replace(" ", "") if pr_match else ""
-                so_val = so_match.group(0).replace(" ", "") if so_match else ""
-                
-                pr_so_final = f"{pr_val}/{so_val}" if (pr_val and so_val) else (pr_val or so_val)
-
-                # 3. Trích xuất SM
-                sm_match = re.search(r"SM[\s]?([\d\.,]+)", text_upper)
-                sm_val = sm_match.group(0).replace(" ", "").replace(",", ".") if sm_match else ""
-
-                if sm_val or pr_so_final:
-                    results.append({
-                        "STT": stt_counter,
-                        "SM": sm_val,
-                        "PR/SO": pr_so_final,
-                        "NGÀY": ngay,
-                        "SỐ TRANG": i + 1
-                    })
-                    stt_counter += 1
-
+            if res:
+                res["STT"] = stt
+                res["SỐ TRANG"] = i + 1
+                final_list.append(res)
+                stt += 1
+        
         doc.close()
 
-        if results:
-            df = pd.DataFrame(results)
-            df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]]
-            st.success(f"Thành công! Đã tìm thấy {len(df)} phiếu.")
-            st.table(df)
+        if final_list:
+            df = pd.DataFrame(final_list)
+            df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]] # Sắp xếp đúng 5 cột
+            
+            st.success(f"Xử lý xong! Tìm thấy {len(df)} phiếu.")
+            st.dataframe(df, use_container_width=True)
 
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Result')
+                df.to_excel(writer, index=False, sheet_name='Data')
             
             st.download_button(
-                label="📥 Tải file Excel kết quả",
+                label="📥 Tải file Excel",
                 data=output.getvalue(),
-                file_name=f"KetQua_OCR_{uploaded_file.name.replace('.pdf', '')}.xlsx",
+                file_name=f"KetQua_{uploaded_file.name.replace('.pdf', '')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Không tìm thấy dữ liệu trên ảnh. Vui lòng kiểm tra độ nét của file scan.")
+            st.error("Không tìm thấy trang nào đúng tiêu đề 'Nhựa Tiền Phong'.")
+            st.info("Lưu ý: Nếu bạn bôi đen được chữ nhưng không ra kết quả, có thể lớp chữ ẩn bị lỗi. Bạn hãy dùng Chrome để 'In -> Lưu PDF' rồi upload lại nhé.")
