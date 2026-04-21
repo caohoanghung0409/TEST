@@ -4,30 +4,38 @@ import pandas as pd
 import re
 import io
 
-st.set_page_config(page_title="Trích xuất PDF Tiền Phong", layout="wide")
+st.set_page_config(page_title="Fix Trích Xuất Tiền Phong", layout="wide")
 
-st.title("🚀 Công cụ trích xuất dữ liệu Nhựa Tiền Phong")
-st.write("Cơ chế: Vét cạn ký tự (Chống lỗi font và khoảng trắng do scan)")
+st.title("✅ Hệ thống trích xuất Nhựa Tiền Phong (Bản Fix Dứt Điểm)")
+st.write("Cơ chế: Sắp xếp lại văn bản theo tọa độ để trị lỗi chữ bị nhảy dòng/dính chữ.")
 
 uploaded_file = st.file_uploader("Upload file PDF", type="pdf")
 
-def extract_advanced(text_raw):
-    # Bước 1: Xóa sạch mọi loại khoảng trắng, xuống dòng để dồn chữ thành 1 khối duy nhất
-    # Điều này giúp trị dứt điểm lỗi chữ bị rời rạc kiểu "P R 2 6 0 4"
-    text_compact = re.sub(r'\s+', '', text_raw).upper()
+def solve_extraction(page, page_num):
+    # Lấy văn bản theo dạng "dict" để có tọa độ từng chữ
+    blocks = page.get_text("dict")["blocks"]
+    full_text = ""
     
-    # Bước 2: Kiểm tra tiêu đề (Tìm từ khóa trong khối chữ đã dồn)
-    keywords = ["NHỰATHIẾUNIÊNTIỀNPHONG", "NHUATHIEUNIENTIENPHONG", "ĐỒNGAN2", "DONGAN2"]
-    if any(kw in text_compact for kw in keywords):
+    # Gom tất cả các đoạn chữ lại theo thứ tự đọc tự nhiên
+    for b in blocks:
+        if "lines" in b:
+            for l in b["lines"]:
+                for s in l["spans"]:
+                    full_text += s["text"] + " "
+    
+    text_upper = " ".join(full_text.split()).upper()
+    
+    # Kiểm tra tiêu đề (Nới lỏng tối đa: chỉ cần thấy chữ TIEN PHONG hoặc TIỀN PHONG)
+    if "TIỀN PHONG" in text_upper or "TIEN PHONG" in text_upper or "ĐỒNG AN 2" in text_upper:
         
-        # 1. Trích xuất Ngày (Tìm trong text_raw để lấy định dạng dd/mm/yyyy chuẩn)
-        date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_raw)
+        # 1. Trích xuất Ngày
+        date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_upper)
         ngay = date_match.group(1) if date_match else ""
 
-        # 2. Trích xuất PR và SO từ khối chữ dồn
-        # Tìm PR theo sau là 4 số năm (2604) và các số/dấu chấm tiếp theo
-        pr_match = re.search(r"PR(260[3-4][\d\.]*)", text_compact)
-        so_match = re.search(r"SO(260[3-4][\d\.]*)", text_compact)
+        # 2. Trích xuất PR và SO (Tìm độc lập)
+        # Bắt các chuỗi bắt đầu bằng PR/SO và có dãy số 26...
+        pr_match = re.search(r"PR\s?(26\d{2}[\d\.]*)", text_upper)
+        so_match = re.search(r"SO\s?(26\d{2}[\d\.]*)", text_upper)
         
         pr_val = f"PR{pr_match.group(1)}" if pr_match else ""
         so_val = f"SO{so_match.group(1)}" if so_match else ""
@@ -38,56 +46,52 @@ def extract_advanced(text_raw):
         else:
             pr_so_final = pr_val if pr_val else so_val
 
-        # 3. Trích xuất SM từ khối chữ dồn
-        sm_match = re.search(r"SM(260[3-4][\d\.,]*)", text_compact)
+        # 3. Trích xuất SM
+        sm_match = re.search(r"SM\s?(26\d{2}[\d\.,]*)", text_upper)
         sm_val = f"SM{sm_match.group(1).replace(',', '.')}" if sm_match else ""
 
         if sm_val or pr_so_final:
-            return {"SM": sm_val, "PR/SO": pr_so_final, "NGÀY": ngay}
-            
+            return {"STT": 0, "SM": sm_val, "PR/SO": pr_so_final, "NGÀY": ngay, "SỐ TRANG": page_num}
     return None
 
 if uploaded_file:
-    with st.spinner('Hệ thống đang quét lớp chữ ẩn...'):
+    with st.spinner('Đang nhặt ký tự và ghép mã...'):
         doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
         data = []
-        stt = 1
         
         for i in range(len(doc)):
             page = doc.load_page(i)
+            # Thử hướng 0 độ
+            res = solve_extraction(page, i + 1)
             
-            # Thử đọc 0 độ
-            res = extract_advanced(page.get_text())
-            
-            # Nếu không thấy, thử xoay 180 độ
+            # Nếu không thấy, xoay 180 độ thử lại
             if not res:
                 page.set_rotation(180)
-                res = extract_advanced(page.get_text())
-            
+                res = solve_extraction(page, i + 1)
+                
             if res:
-                res["STT"] = stt
-                res["SỐ TRANG"] = i + 1
                 data.append(res)
-                stt += 1
         
         doc.close()
 
         if data:
             df = pd.DataFrame(data)
+            # Cập nhật lại STT
+            df['STT'] = range(1, len(df) + 1)
             df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]]
-            st.success(f"Tìm thấy {len(df)} phiếu!")
+            
+            st.success(f"Đã trích xuất thành công {len(df)} dòng dữ liệu!")
             st.dataframe(df, use_container_width=True)
 
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Data')
+                df.to_excel(writer, index=False, sheet_name='Result')
             
             st.download_button(
-                label="📥 Tải file Excel",
+                label="📥 Tải File Excel 5 Cột",
                 data=output.getvalue(),
                 file_name=f"KetQua_{uploaded_file.name.replace('.pdf', '')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Hệ thống vẫn không đọc được lớp chữ ẩn của file này.")
-            st.info("Vì file của bạn bôi đen được nhưng máy không đọc ra chữ đúng, hãy dùng cách cuối cùng: Mở PDF bằng Chrome -> Bấm Ctrl+P -> Chọn 'Save as PDF' rồi upload file mới đó lên đây.")
+            st.error("Lỗi: Hệ thống không tìm thấy tiêu đề 'Nhựa Tiền Phong'.")
