@@ -2,3 +2,6 @@ streamlit
 pymupdf
 pandas
 xlsxwriter
+pytesseract
+pdf2image
+pillow
