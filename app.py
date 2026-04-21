@@ -17,66 +17,22 @@ st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 # =========================
 # SESSION
 # =========================
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-if "done" not in st.session_state:
-    st.session_state.done = False
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
-if "excel_file" not in st.session_state:
-    st.session_state.excel_file = None
+if "run" not in st.session_state:
+    st.session_state.run = False
 
 # =========================
-# STYLE
+# UI
 # =========================
-st.markdown("""
-<style>
-header, #MainMenu, footer {visibility: hidden;}
-.block-container {padding-top: 0.5rem !important;}
-.stApp { background: #f1f5f9; }
-
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
-
-[data-testid="stFileUploader"] {
-    border: 2px dashed #93c5fd;
-    padding: 25px;
-    border-radius: 18px;
-    background: white;
-}
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
-
-# =========================
-# UPLOAD
-# =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+st.markdown("## 🚀 THL PDF → EXCEL")
 
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
+    accept_multiple_files=True
 )
 
 # =========================
-# OCR LOGIC (ỔN ĐỊNH)
+# OCR CORE
 # =========================
 def ocr_extract(img):
 
@@ -138,7 +94,7 @@ def ocr_extract(img):
     return None, None, None
 
 # =========================
-# PROCESS
+# PROCESS PDF
 # =========================
 def extract_pdf(file):
 
@@ -159,52 +115,65 @@ def extract_pdf(file):
     return results
 
 # =========================
-# MAIN
+# BUTTON
 # =========================
 if uploaded_files:
 
     if st.button("🚀 Bắt đầu xử lý"):
+        st.session_state.run = True
 
-        tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+# =========================
+# RUN PROCESS
+# =========================
+if st.session_state.run and uploaded_files:
 
-        with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
+    st.write("⏳ Đang xử lý...")
 
-            has_data = False
+    tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
-            for f in uploaded_files:
+    with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-                data = extract_pdf(f)
+        has_data = False
 
-                if data:
-                    has_data = True
-                    df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
+        for f in uploaded_files:
 
-                    name = os.path.splitext(f.name)[0][:31]
-                    df.to_excel(writer, sheet_name=name, index=False)
+            data = extract_pdf(f)
 
-            if not has_data:
-                df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
-                df.to_excel(writer, sheet_name="KET_QUA", index=False)
+            if data:
+                has_data = True
 
-        wb = load_workbook(tmp_excel.name)
+                df = pd.DataFrame(data)
+                df.insert(0, "STT", range(1, len(df)+1))
 
-        thin = Side(style='thin')
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                name = os.path.splitext(f.name)[0][:31]
+                df.to_excel(writer, sheet_name=name, index=False)
 
-        for ws in wb.worksheets:
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+        if not has_data:
+            df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
+            df.to_excel(writer, sheet_name="KET_QUA", index=False)
 
-            for row in ws.iter_rows():
-                for cell in row:
-                    cell.border = border
+    wb = load_workbook(tmp_excel.name)
 
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
+    thin = Side(style='thin')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        wb.save(tmp_excel.name)
+    for ws in wb.worksheets:
+        for col in ws.columns:
+            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+            ws.column_dimensions[col[0].column_letter].width = max_len + 3
 
-        with open(tmp_excel.name, "rb") as f:
-            st.download_button("📥 Tải Excel", f, file_name="result.xlsx")
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.border = border
+
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+
+    wb.save(tmp_excel.name)
+
+    with open(tmp_excel.name, "rb") as f:
+        st.download_button("📥 Tải Excel", f, file_name="result.xlsx")
+
+    st.success("✅ Xử lý xong!")
+
+    st.session_state.run = False
