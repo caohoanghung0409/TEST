@@ -50,9 +50,6 @@ header, #MainMenu, footer {visibility: hidden;}
     border-radius: 18px;
     background: white;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
-}
 
 div.stButton > button {
     background: linear-gradient(135deg,#3b82f6,#22c55e);
@@ -141,33 +138,32 @@ def ocr_extract(img):
             raw = line.strip()
             clean = normalize(raw)
 
-            # SM
+            # ===== SM =====
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # PR + SO ghép
+            # ===== PR + SO (CHỊU LỖI OCR) =====
             if not prso:
-                pr = re.search(r"P[R]\d{4}\.\d{4}", clean)
-                so = re.search(r"S[O]\d{4}\.\d{4}", clean)
+                codes = re.findall(r"\d{4}\.\d{4}", clean)
 
-                if pr and so:
-                    prso = f"{pr.group(0)}/{so.group(0)}"
+                if len(codes) >= 2:
+                    prso = f"PR{codes[0]}/SO{codes[1]}"
 
-            # PR riêng
+            # ===== PR riêng =====
             if not prso:
-                pr = re.search(r"P[R]\d{4}\.\d{4}", clean)
-                if pr:
-                    prso = pr.group(0)
+                m = re.search(r"\d{4}\.\d{4}", clean)
+                if m:
+                    prso = f"PR{m.group(0)}"
 
-            # SO fallback
+            # ===== SO fallback =====
             if not prso:
-                so = re.search(r"S[O]\d{4}\.\d{4}", clean)
-                if so:
-                    prso = so.group(0)
+                m = re.search(r"S[O0]\d{4}\.\d{4}", clean)
+                if m:
+                    prso = m.group(0).replace("S0", "SO")
 
-            # DATE
+            # ===== DATE =====
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -177,6 +173,7 @@ def ocr_extract(img):
 
     w, h = img.size
 
+    # check header nhanh
     header = img.crop((0, 0, w, int(h * 0.25)))
     quick = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
