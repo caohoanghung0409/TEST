@@ -5,10 +5,14 @@ import pandas as pd
 import re
 import tempfile
 import os
+import time
 import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
@@ -20,20 +24,95 @@ if "done" not in st.session_state:
     st.session_state.done = False
 if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
+if "last_uploaded_names" not in st.session_state:
+    st.session_state.last_uploaded_names = []
+if "excel_file" not in st.session_state:
+    st.session_state.excel_file = None
 
 # =========================
-# UI
+# STYLE (GIỮ NGUYÊN)
 # =========================
-st.title("🚀 THL PDF → EXCEL")
+st.markdown("""
+<style>
+header, #MainMenu, footer {visibility: hidden;}
+.block-container {padding-top: 0.5rem !important;}
+.stApp { background: #f1f5f9; }
+
+.header {
+    font-size:22px;
+    font-weight:700;
+    margin-bottom:10px;
+}
+
+[data-testid="stFileUploader"] {
+    border: 2px dashed #93c5fd;
+    padding: 25px;
+    border-radius: 18px;
+    background: white;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
+}
+
+div.stButton > button {
+    background: linear-gradient(135deg,#3b82f6,#22c55e);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 24px;
+    font-weight:600;
+}
+
+.new-btn button {
+    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.file-row {
+    margin-top:12px;
+    padding:10px;
+    border-radius:12px;
+    background:white;
+}
+
+.progress {
+    height:8px;
+    background:#e5e7eb;
+    border-radius:999px;
+    overflow:hidden;
+}
+.progress-bar {
+    height:100%;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# HEADER
+# =========================
+st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
+
+# =========================
+# UPLOADER
+# =========================
+uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
 
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=uploader_key
 )
 
+current_names = [f.name for f in uploaded_files] if uploaded_files else []
+
+if current_names != st.session_state.last_uploaded_names:
+    st.session_state.processing = False
+    st.session_state.done = False
+    st.session_state.last_uploaded_names = current_names
+
 # =========================
-# OCR CORE
+# OCR
 # =========================
 def ocr_extract(img):
 
@@ -62,36 +141,33 @@ def ocr_extract(img):
             raw = line.strip()
             clean = normalize(raw)
 
-            # ===== SM =====
+            # SM
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # ===== PR + SO GHÉP =====
+            # PR + SO ghép
             if not prso:
+                pr = re.search(r"P[R]\d{4}\.\d{4}", clean)
+                so = re.search(r"S[O]\d{4}\.\d{4}", clean)
 
-                pr_match = re.search(r"P[R]\d{4}\.\d{4}", clean)
-                so_match = re.search(r"S[O]\d{4}\.\d{4}", clean)
+                if pr and so:
+                    prso = f"{pr.group(0)}/{so.group(0)}"
 
-                if pr_match and so_match:
-                    pr_val = pr_match.group(0)
-                    so_val = so_match.group(0)
-                    prso = f"{pr_val}/{so_val}"
-
-            # ===== PR riêng =====
+            # PR riêng
             if not prso:
-                m = re.search(r"P[R]\d{4}\.\d{4}", clean)
-                if m:
-                    prso = m.group(0)
+                pr = re.search(r"P[R]\d{4}\.\d{4}", clean)
+                if pr:
+                    prso = pr.group(0)
 
-            # ===== SO fallback =====
+            # SO fallback
             if not prso:
-                m = re.search(r"S[O]\d{4}\.\d{4}", clean)
-                if m:
-                    prso = m.group(0)
+                so = re.search(r"S[O]\d{4}\.\d{4}", clean)
+                if so:
+                    prso = so.group(0)
 
-            # ===== DATE =====
+            # DATE
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -101,14 +177,12 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    # ===== CHECK HEADER =====
     header = img.crop((0, 0, w, int(h * 0.25)))
-    quick_text = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
+    quick = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
-    if not is_valid_header(quick_text):
+    if not is_valid_header(quick):
         return None, None, None
 
-    # ===== OCR =====
     for variant in [
         img.crop((0, 0, w, int(h * 0.4))),
         img
@@ -124,20 +198,32 @@ def ocr_extract(img):
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file):
+def extract_pdf(file, box):
 
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
+    total = len(images)
 
-    for i, img in enumerate(images, start=1):
+    for i, img in enumerate(images, 1):
+
+        percent = int((i/total)*100)
+
+        box.markdown(f"""
+<div class="file-row">
+📄 {file.name} — Trang {i}/{total}
+<div class="progress">
+<div class="progress-bar" style="width:{percent}%"></div>
+</div>
+</div>
+""", unsafe_allow_html=True)
 
         sm, prso, date = ocr_extract(img)
 
         if sm or prso:
             results.append({
-                "SM": sm if sm else "",
-                "PR/SO": prso if prso else "",
-                "Ngày": date if date else "",
+                "SM": sm or "",
+                "PR/SO": prso or "",
+                "Ngày": date or "",
                 "Trang": i
             })
 
@@ -148,7 +234,14 @@ def extract_pdf(file):
 # =========================
 if uploaded_files:
 
-    if st.button("🚀 Bắt đầu xử lý"):
+    boxes = [st.empty() for _ in uploaded_files]
+
+    if not st.session_state.processing and not st.session_state.done:
+        if st.button("🚀 Bắt đầu xử lý"):
+            st.session_state.processing = True
+            st.rerun()
+
+    if st.session_state.processing:
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
@@ -156,9 +249,9 @@ if uploaded_files:
 
             has_data = False
 
-            for f in uploaded_files:
+            for i, f in enumerate(uploaded_files):
 
-                data = extract_pdf(f)
+                data = extract_pdf(f, boxes[i])
 
                 if data:
                     has_data = True
@@ -166,11 +259,11 @@ if uploaded_files:
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    name = os.path.splitext(f.name)[0][:31]
+                    df.to_excel(writer, sheet_name=name, index=False)
 
             if not has_data:
-                df = pd.DataFrame([{"Thông báo": "Không tìm thấy dữ liệu"}])
+                df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
                 df.to_excel(writer, sheet_name="KET_QUA", index=False)
 
         # format excel
@@ -193,7 +286,22 @@ if uploaded_files:
 
         wb.save(tmp_excel.name)
 
-        st.success("🎉 HOÀN THÀNH")
+        st.session_state.excel_file = tmp_excel.name
+        st.session_state.processing = False
+        st.session_state.done = True
+        st.rerun()
 
-        with open(tmp_excel.name, "rb") as f:
-            st.download_button("📥 Tải Excel", f, file_name="ket_qua.xlsx")
+# =========================
+# DOWNLOAD
+# =========================
+if st.session_state.done:
+
+    st.success("🎉 HOÀN THÀNH !!!")
+
+    with open(st.session_state.excel_file, "rb") as f:
+        st.download_button("📥 Tải Excel", f, file_name="ket_qua.xlsx")
+
+    if st.button("🔄 XỬ LÝ FILE MỚI"):
+        st.session_state.done = False
+        st.session_state.clear_uploader = not st.session_state.clear_uploader
+        st.rerun()
