@@ -114,52 +114,71 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (CHUẨN HEADER)
+# OCR (FIX MISS + SAI KÝ TỰ)
 # =========================
 def ocr_extract(img):
 
-    def read_lines(image):
-        text = pytesseract.image_to_string(
-            image, lang='eng', config='--oem 3 --psm 6'
-        )
+    def normalize(text):
+        text = text.replace("P8", "PR")
+        text = text.replace("S0", "SO")
+        text = text.replace(" ", "")
+        return text
 
-        lines = text.split("\n")
+    def read_lines(image):
+
+        texts = []
+        for psm in [6, 11]:
+            t = pytesseract.image_to_string(
+                image,
+                lang='eng',
+                config=f'--oem 3 --psm {psm}'
+            )
+            texts.append(t)
 
         sm_result = None
         prso_result = None
         date = None
 
-        for line in lines:
-            line_clean = line.strip().replace(" ", "")
+        for text in texts:
+            lines = text.split("\n")
 
-            # SM
-            if not sm_result:
-                m = re.search(r"(SM\d{4}\.\d{4})", line_clean)
-                if m:
-                    sm_result = m.group(1)
+            for line in lines:
 
-            # PR/SO (lấy nguyên cụm)
-            if not prso_result:
-                m = re.search(r"(PR\d{4}\.\d{4}/SO\d{4}\.\d{4})", line_clean)
-                if m:
-                    prso_result = m.group(1)
+                raw_line = line.strip()
+                line_clean = normalize(raw_line)
 
-            # DATE
-            if not date:
-                d = re.search(r"(\d{2}/\d{2}/\d{4})", line)
-                if d:
-                    date = d.group(1)
+                # SM
+                if not sm_result:
+                    m = re.search(r"(SM\d{4}\.\d{4})", line_clean)
+                    if m:
+                        sm_result = m.group(1)
+
+                # PR/SO (linh hoạt)
+                if not prso_result:
+                    m = re.search(r"(PR\d{4}\.\d{4}/?SO\d{4}\.\d{4})", line_clean)
+                    if m:
+                        prso_result = m.group(1)
+
+                # DATE
+                if not date:
+                    d = re.search(r"(\d{2}/\d{2}/\d{4})", raw_line)
+                    if d:
+                        date = d.group(1)
 
         return sm_result, prso_result, date
 
     w, h = img.size
 
-    for variant in [
+    variants = [
         img.crop((0,0,w,int(h*0.4))),
+        img.crop((0,0,w,int(h*0.5))),
         img,
         img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
-        img.rotate(180, expand=True),
-    ]:
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True),
+    ]
+
+    for variant in variants:
         sm, prso, date = read_lines(variant)
 
         if (sm or prso) and date:
