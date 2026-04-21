@@ -6,6 +6,7 @@ import re
 import tempfile
 import os
 import time
+import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -29,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE
+# STYLE (GIỮ NGUYÊN)
 # =========================
 st.markdown("""
 <style>
@@ -48,6 +49,10 @@ header, #MainMenu, footer {visibility: hidden;}
     padding: 25px;
     border-radius: 18px;
     background: white;
+    transition: 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -57,10 +62,21 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
+    font-size:15px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.25s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02);
 }
 
 .new-btn button {
     background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
+}
+
+.process-btn {
+    margin-top: 25px;
+    margin-bottom: 15px;
 }
 
 .file-row {
@@ -68,6 +84,7 @@ div.stButton > button {
     padding:10px;
     border-radius:12px;
     background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
 .progress {
@@ -75,10 +92,17 @@ div.stButton > button {
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
+    margin-top:6px;
 }
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+
+.loading {
+    font-size:14px;
+    color:#475569;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -108,7 +132,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR (FINAL FIX)
 # =========================
 def ocr_extract(img):
 
@@ -135,34 +159,27 @@ def ocr_extract(img):
             raw = line.strip()
             clean = normalize(raw)
 
-            # ===== SM =====
+            # SM
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # ===== PR + SO (ƯU TIÊN CHUẨN) =====
+            # ===== FIX QUAN TRỌNG: LẤY NGUYÊN CỤM PR/SO =====
             if not prso:
-                pr_match = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
-                so_match = re.search(r"S[O0]\d{4}\.\d{4}", clean)
+                m = re.search(r"(PR\d{4}\.\d{4}\s*/\s*SO\d{4}\.\d{4})", clean)
+                if m:
+                    prso = m.group(1).replace(" ", "")
 
-                if pr_match and so_match:
-                    pr_val = pr_match.group(0)
-                    if pr_val.startswith("R"):
-                        pr_val = "P" + pr_val
-                    pr_val = pr_val.replace("P8", "PR")
-
-                    so_val = so_match.group(0).replace("S0", "SO")
-                    prso = f"{pr_val}/{so_val}"
-
-            # ===== FIX TRƯỜNG HỢP OCR MẤT CHỮ (CHỈ CÒN SỐ) =====
+            # fallback OCR lỗi nhẹ
             if not prso:
-                if "SO" in clean or "/" in clean:
-                    codes = re.findall(r"\d{4}\.\d{4}", clean)
-                    if len(codes) >= 2:
-                        prso = f"PR{codes[0]}/SO{codes[1]}"
+                m = re.search(r"(P[R8]\d{4}\.\d{4}).*?(S[O0]\d{4}\.\d{4})", clean)
+                if m:
+                    pr = m.group(1).replace("P8", "PR")
+                    so = m.group(2).replace("S0", "SO")
+                    prso = f"{pr}/{so}"
 
-            # ===== PR riêng =====
+            # PR riêng
             if not prso:
                 m = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
                 if m:
@@ -171,13 +188,13 @@ def ocr_extract(img):
                         val = "P" + val
                     prso = val.replace("P8", "PR")
 
-            # ===== SO fallback =====
+            # SO fallback
             if not prso:
                 m = re.search(r"S[O0]\d{4}\.\d{4}", clean)
                 if m:
                     prso = m.group(0).replace("S0", "SO")
 
-            # ===== DATE =====
+            # DATE
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -247,11 +264,15 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
+        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
+
+        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
@@ -308,9 +329,17 @@ if st.session_state.done:
     st.success("🎉 HOÀN THÀNH !!!")
 
     with open(st.session_state.excel_file, "rb") as f:
-        st.download_button("📥 Tải Excel", f, file_name="ket_qua.xlsx")
+        data = f.read()
 
+    b64 = base64.b64encode(data).decode()
+
+    st.markdown(f"""
+        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
