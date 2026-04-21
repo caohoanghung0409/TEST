@@ -10,258 +10,155 @@ import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
 
 # =========================
-# SESSION
-# =========================
-if "processing" not in st.session_state:
-    st.session_state.processing = False
-if "done" not in st.session_state:
-    st.session_state.done = False
-if "clear_uploader" not in st.session_state:
-    st.session_state.clear_uploader = False
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
-if "excel_file" not in st.session_state:
-    st.session_state.excel_file = None
-
-# =========================
-# STYLE
-# =========================
-st.markdown("""
-<style>
-header, #MainMenu, footer {visibility: hidden;}
-.block-container {padding-top: 0.5rem !important;}
-.stApp { background: #f1f5f9; }
-
-.header { font-size:22px; font-weight:700; margin-bottom:10px; }
-
-[data-testid="stFileUploader"] {
-    border: 2px dashed #93c5fd;
-    padding: 25px;
-    border-radius: 18px;
-    background: white;
-}
-
-div.stButton > button {
-    background: linear-gradient(135deg,#3b82f6,#22c55e);
-    color:white;
-    border:none;
-    border-radius:12px;
-    padding:12px 24px;
-    font-weight:600;
-}
-
-.file-row {
-    margin-top:12px;
-    padding:10px;
-    border-radius:12px;
-    background:white;
-}
-
-.progress {
-    height:8px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-    margin-top:6px;
-}
-.progress-bar {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-}
-
-.global-bar {
-    height:20px;
-    background:#e5e7eb;
-    border-radius:999px;
-    overflow:hidden;
-    margin-top:10px;
-}
-.global-fill {
-    height:100%;
-    background:linear-gradient(90deg,#3b82f6,#22c55e);
-}
-</style>
-""", unsafe_allow_html=True)
-
-# =========================
-# HEADER
-# =========================
-st.markdown('<div class="header">🚀 THL PDF → EXCEL </div>', unsafe_allow_html=True)
-
-# =========================
-# UPLOADER
-# =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
-
-uploaded_files = st.file_uploader(
-    "📂 Chọn file PDF",
-    type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
-)
-
-current_names = [f.name for f in uploaded_files] if uploaded_files else []
-
-if current_names != st.session_state.last_uploaded_names:
-    st.session_state.processing = False
-    st.session_state.done = False
-    st.session_state.last_uploaded_names = current_names
-
-# =========================
-# OCR (FIX MISS + SAI KÝ TỰ)
+# OCR
 # =========================
 def ocr_extract(img):
 
     def normalize(text):
+        text = text.upper()
         text = text.replace("P8", "PR")
         text = text.replace("S0", "SO")
         text = text.replace(" ", "")
         return text
 
-    def read_lines(image):
+    def is_valid_header(text):
+        t = text.upper()
 
-        texts = []
-        for psm in [6, 11]:
-            t = pytesseract.image_to_string(
-                image,
-                lang='eng',
-                config=f'--oem 3 --psm {psm}'
-            )
-            texts.append(t)
+        return (
+            "NHUA THIEU NIEN TIEN PHONG" in t
+            and "NHUATIENPHONG.VN" in t
+        )
 
-        sm_result = None
-        prso_result = None
+    def extract_from_text(text):
+
+        if not is_valid_header(text):
+            return None, None, None
+
+        lines = text.split("\n")
+
+        sm = None
+        prso = None
         date = None
 
-        for text in texts:
-            lines = text.split("\n")
+        for line in lines:
+            raw = line.strip()
+            clean = normalize(raw)
 
-            for line in lines:
+            # SM
+            if not sm:
+                m = re.search(r"(SM\d{4}\.\d{4})", clean)
+                if m:
+                    sm = m.group(1)
 
-                raw_line = line.strip()
-                line_clean = normalize(raw_line)
+            # PR/SO
+            if not prso:
+                m = re.search(r"(PR\d{4}\.\d{4}/SO\d{4}\.\d{4})", clean)
+                if m:
+                    prso = m.group(1)
 
-                # SM
-                if not sm_result:
-                    m = re.search(r"(SM\d{4}\.\d{4})", line_clean)
-                    if m:
-                        sm_result = m.group(1)
+            # PR riêng
+            if not prso:
+                m = re.search(r"(PR\d{4}\.\d{4})", clean)
+                if m:
+                    prso = m.group(1)
 
-                # PR/SO (linh hoạt)
-                if not prso_result:
-                    m = re.search(r"(PR\d{4}\.\d{4}/?SO\d{4}\.\d{4})", line_clean)
-                    if m:
-                        prso_result = m.group(1)
+            # SO fallback
+            if not prso:
+                m = re.search(r"(SO\d{4}\.\d{4})", clean)
+                if m:
+                    prso = m.group(1)
 
-                # DATE
-                if not date:
-                    d = re.search(r"(\d{2}/\d{2}/\d{4})", raw_line)
-                    if d:
-                        date = d.group(1)
+            # DATE
+            if not date:
+                d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
+                if d:
+                    date = d.group(1)
 
-        return sm_result, prso_result, date
+        return sm, prso, date
 
     w, h = img.size
 
-    variants = [
-        img.crop((0,0,w,int(h*0.4))),
-        img.crop((0,0,w,int(h*0.5))),
-        img,
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True),
-    ]
+    # ===== 1. CHECK HEADER NHANH (rất quan trọng) =====
+    header = img.crop((0, 0, w, int(h * 0.25)))
 
-    for variant in variants:
-        sm, prso, date = read_lines(variant)
+    text_quick = pytesseract.image_to_string(
+        header, lang='eng', config='--oem 3 --psm 6'
+    )
+
+    if not is_valid_header(text_quick):
+        return None, None, None  # ❗ skip luôn
+
+    # ===== 2. OCR CHÍNH (ít lần) =====
+    for variant in [
+        img.crop((0, 0, w, int(h * 0.4))),
+        img
+    ]:
+        text = pytesseract.image_to_string(
+            variant, lang='eng', config='--oem 3 --psm 6'
+        )
+
+        sm, prso, date = extract_from_text(text)
 
         if (sm or prso) and date:
             return sm, prso, date
 
-    return None, None, None
+    # fallback rotate 180
+    img2 = img.rotate(180, expand=True)
+    text = pytesseract.image_to_string(
+        img2, lang='eng', config='--oem 3 --psm 6'
+    )
+
+    return extract_from_text(text)
+
 
 # =========================
 # PROCESS
 # =========================
-def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(file):
 
     results = []
     images = convert_from_bytes(file.read(), dpi=150)
-    total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
 
-        processed_pages[0] += 1
-
-        percent = int((i/total_pages)*100)
-        global_percent = int((processed_pages[0] / total_pages_all) * 100)
-
-        global_box.markdown(f"""
-        <div class="global-bar">
-            <div class="global-fill" style="width:{global_percent}%"></div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        box.markdown(f"""
-<div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
-<div class="progress">
-<div class="progress-bar" style="width:{percent}%"></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
         sm, prso, date = ocr_extract(img)
 
-        if date:
+        if sm or prso:
             results.append({
                 "SM": sm if sm else "",
                 "PR/SO": prso if prso else "",
-                "Ngày": date,
+                "Ngày": date if date else "",
                 "Trang": i
             })
 
     return results
 
+
 # =========================
-# MAIN
+# UI
 # =========================
+st.title("🚀 THL PDF → EXCEL")
+
+uploaded_files = st.file_uploader(
+    "📂 Chọn file PDF",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
 if uploaded_files:
 
-    global_box = st.empty()
-    boxes = [st.empty() for _ in uploaded_files]
-
-    if not st.session_state.processing and not st.session_state.done:
-        if st.button("🚀 Bắt đầu xử lý"):
-            st.session_state.processing = True
-            st.rerun()
-
-    if st.session_state.processing:
-
-        start_time = time.time()
-
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
-        for f in uploaded_files:
-            f.seek(0)
-
-        processed_pages = [0]
+    if st.button("🚀 Bắt đầu xử lý"):
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-            for i, f in enumerate(uploaded_files):
+            for f in uploaded_files:
 
-                data = extract_pdf(
-                    f, boxes[i], global_box,
-                    start_time, processed_pages, total_pages_all
-                )
+                data = extract_pdf(f)
 
                 if data:
                     df = pd.DataFrame(data)
@@ -270,6 +167,7 @@ if uploaded_files:
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
+        # format excel
         wb = load_workbook(tmp_excel.name)
 
         thin = Side(style='thin')
@@ -289,28 +187,11 @@ if uploaded_files:
 
         wb.save(tmp_excel.name)
 
-        st.session_state.excel_file = tmp_excel.name
-        st.session_state.processing = False
-        st.session_state.done = True
-        st.rerun()
+        st.success("🎉 XONG!")
 
-# =========================
-# DOWNLOAD
-# =========================
-if st.session_state.done:
-
-    st.success("🎉 HOÀN THÀNH !!!")
-
-    with open(st.session_state.excel_file, "rb") as f:
-        data = f.read()
-
-    b64 = base64.b64encode(data).decode()
-
-    st.markdown(f"""
-        <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
-    """, unsafe_allow_html=True)
-
-    if st.button("🔄 XỬ LÝ FILE MỚI"):
-        st.session_state.done = False
-        st.session_state.clear_uploader = not st.session_state.clear_uploader
-        st.rerun()
+        with open(tmp_excel.name, "rb") as f:
+            st.download_button(
+                "📥 Tải Excel",
+                f,
+                file_name="ket_qua.xlsx"
+            )
