@@ -186,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (ĐÃ FIX 4 HƯỚNG)
+# OCR (4 HƯỚNG)
 # =========================
 def ocr_extract(img):
 
@@ -305,6 +305,8 @@ if uploaded_files:
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
+        has_data = False  # 🔥 FIX LỖI
+
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
             for i, f in enumerate(uploaded_files):
@@ -315,12 +317,19 @@ if uploaded_files:
                 )
 
                 if data:
+                    has_data = True
+
                     df = pd.DataFrame(data)
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
 
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            # 🔥 nếu không có dữ liệu vẫn tạo file
+            if not has_data:
+                df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
+                df.to_excel(writer, sheet_name="NO_DATA", index=False)
 
         wb = load_workbook(tmp_excel.name)
 
