@@ -4,62 +4,65 @@ import pandas as pd
 import re
 import io
 
-# Cấu hình giao diện
 st.set_page_config(page_title="Trích xuất PDF Tiền Phong", page_icon="🚚", layout="wide")
 
 st.title("📊 Hệ thống trích xuất dữ liệu Nhựa Tiền Phong")
-st.write("Dữ liệu trích xuất: STT, SM, PR/SO, Ngày, Số trang")
+st.info("Phiên bản cập nhật: Tối ưu hóa nhận diện địa chỉ Bình Dương & TP.HCM")
 
 uploaded_file = st.file_uploader("Upload file PDF scan của bạn", type="pdf")
 
 if uploaded_file:
-    with st.spinner('Đang phân tích dữ liệu...'):
-        # Đọc dữ liệu từ file upload
+    with st.spinner('Đang quét dữ liệu từng trang...'):
         pdf_data = uploaded_file.read()
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         
         results = []
         stt_counter = 1
         
-        # Duyệt từng trang trong file PDF
         for i in range(len(doc)):
             page = doc.load_page(i)
-            text = page.get_text()
-            text_upper = text.upper()
+            # Lấy text và chuẩn hóa: xóa khoảng trắng dư thừa để dễ quét Regex
+            text = page.get_text("text")
+            text_clean = " ".join(text.split())
+            text_upper = text_clean.upper()
             
-            # ĐIỀU KIỆN LẤY TRANG: Nới lỏng theo các thông tin bạn cung cấp
-            # Chỉ cần khớp tên công ty hoặc các thông tin địa chỉ đặc trưng
-            check_header = any(key in text_upper for key in [
-                "NHỰA THIẾU NIÊN TIỀN PHONG PHÍA NAM",
-                "LÔ C2, KCN ĐỒNG AN 2",
-                "HÒA PHÚ, TP.TDM",
-                "135 XÔ VIẾT NGHỆ TĨNH"
-            ])
+            # ĐIỀU KIỆN LỌC TRANG (Dựa trên thông tin bạn cung cấp)
+            keywords = [
+                "NHỰA THIẾU NIÊN TIỀN PHONG",
+                "ĐỒNG AN 2",
+                "HÒA PHÚ",
+                "TP.TDM",
+                "XÔ VIẾT NGHỆ TĨNH"
+            ]
             
-            if check_header:
-                # 1. Trích xuất NGÀY (Tìm định dạng dd/mm/yyyy)
-                date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+            if any(key in text_upper for key in keywords):
+                # 1. Trích xuất NGÀY
+                date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_clean)
                 ngay = date_match.group(1) if date_match else ""
 
                 # 2. Trích xuất PR/SO
-                # Tìm các mã bắt đầu bằng PR hoặc SO, chấp nhận dấu gạch chéo ở giữa
-                pr_so_pattern = r"(PR\d{4}[\d\.]*/SO\d{4}[\d\.]*|PR\d{4}[\d\.]*|SO\d{4}[\d\.]*)"
-                pr_so_matches = re.findall(pr_so_pattern, text_upper)
+                # Quét các cụm bắt đầu bằng PR hoặc SO, lấy cả chuỗi phía sau cho đến khi gặp khoảng trắng
+                pr_matches = re.findall(r"PR[\s]?[\d\.]+", text_upper)
+                so_matches = re.findall(r"SO[\s]?[\d\.]+", text_upper)
                 
-                # Ưu tiên lấy mã có độ dài lớn nhất (thường là mã đầy đủ PR.../SO...)
-                pr_so_val = max(pr_so_matches, key=len) if pr_so_matches else ""
+                # Làm sạch và kết hợp
+                pr_val = pr_matches[0].replace(" ", "") if pr_matches else ""
+                so_val = so_matches[0].replace(" ", "") if so_matches else ""
+                
+                if pr_val and so_val:
+                    pr_so_final = f"{pr_val}/{so_val}"
+                else:
+                    pr_so_final = pr_val if pr_val else so_val
 
                 # 3. Trích xuất SM
-                # Tìm chữ SM kèm các chữ số và dấu chấm/phẩy (ví dụ SM2604.3704)
-                sm_match = re.search(r"SM\s?(\d{4}[\d\.,]*)", text_upper)
+                sm_match = re.search(r"SM[\s]?([\d\.,]+)", text_upper)
                 sm_val = f"SM{sm_match.group(1).strip()}" if sm_match else ""
 
-                # Chỉ lưu nếu tìm thấy ít nhất 1 loại mã số
-                if sm_val or pr_so_val:
+                if sm_val or pr_so_final:
                     results.append({
                         "STT": stt_counter,
                         "SM": sm_val,
-                        "PR/SO": pr_so_val,
+                        "PR/SO": pr_so_final,
                         "NGÀY": ngay,
                         "SỐ TRANG": i + 1
                     })
@@ -69,25 +72,20 @@ if uploaded_file:
 
         if results:
             df = pd.DataFrame(results)
-            # Đảm bảo thứ tự 5 cột như yêu cầu
             df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]]
-            
-            st.success(f"Đã tìm thấy {len(df)} dòng dữ liệu hợp lệ!")
+            st.success(f"Đã tìm thấy {len(df)} dòng dữ liệu!")
             st.dataframe(df, use_container_width=True)
 
-            # Xuất file Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='KetQua')
+                df.to_excel(writer, index=False, sheet_name='Data')
             
             st.download_button(
-                label="📥 Tải file Excel ngay",
+                label="📥 Tải file Excel",
                 data=output.getvalue(),
-                file_name=f"Ket_qua_Tien_Phong_{uploaded_file.name.split('.')[0]}.xlsx",
+                file_name=f"KetQua_{uploaded_file.name.split('.')[0]}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Không tìm thấy dữ liệu. Hãy đảm bảo file PDF có lớp văn bản (bôi đen được).")
-
-st.markdown("---")
-st.caption("Công cụ tối ưu cho mẫu phiếu Nhựa Tiền Phong Phía Nam.")
+            st.error("Vẫn không tìm thấy dữ liệu. Có khả năng file này là 'PDF Image' hoàn toàn.")
+            st.warning("Mẹo: Nếu bạn bôi đen được nhưng kết quả trắng, hãy thử mở PDF bằng Chrome, chọn In -> Lưu dưới dạng PDF (Save as PDF) rồi upload lại file mới đó lên đây.")
