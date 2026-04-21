@@ -6,7 +6,6 @@ import re
 import tempfile
 import os
 import time
-import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -30,7 +29,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -109,7 +108,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (FIX NHẸ PR)
+# OCR
 # =========================
 def ocr_extract(img):
 
@@ -123,6 +122,12 @@ def ocr_extract(img):
         t = text.upper()
         return "TIEN PHONG" in t or "NHUATIENPHONG" in t
 
+    def fix_pr(val):
+        # FIX QUAN TRỌNG: Rxxxx -> PRxxxx
+        if val.startswith("R"):
+            return "P" + val
+        return val
+
     def extract_from_text(text):
 
         if not is_valid_header(text):
@@ -132,41 +137,40 @@ def ocr_extract(img):
         prso = None
         date = None
 
-        lines = text.split("\n")
-
-        for line in lines:
+        for line in text.split("\n"):
             raw = line.strip()
             clean = normalize(raw)
 
-            # ===== SM =====
+            # SM
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # ===== PR + SO (FIX NHẸ) =====
+            # PR + SO
             if not prso:
-                pr_match = re.search(r"P[R8]\d{4}\.\d{4}", clean)
+                pr_match = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
                 so_match = re.search(r"S[O0]\d{4}\.\d{4}", clean)
 
                 if pr_match and so_match:
-                    pr_val = pr_match.group(0).replace("P8", "PR")
+                    pr_val = fix_pr(pr_match.group(0)).replace("P8", "PR")
                     so_val = so_match.group(0).replace("S0", "SO")
                     prso = f"{pr_val}/{so_val}"
 
-            # ===== PR riêng =====
+            # PR riêng
             if not prso:
-                m = re.search(r"P[R8]\d{4}\.\d{4}", clean)
+                m = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
                 if m:
-                    prso = m.group(0).replace("P8", "PR")
+                    val = fix_pr(m.group(0)).replace("P8", "PR")
+                    prso = val
 
-            # ===== SO fallback =====
+            # SO fallback
             if not prso:
                 m = re.search(r"S[O0]\d{4}\.\d{4}", clean)
                 if m:
                     prso = m.group(0).replace("S0", "SO")
 
-            # ===== DATE =====
+            # DATE
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -176,6 +180,7 @@ def ocr_extract(img):
 
     w, h = img.size
 
+    # check header nhanh
     header = img.crop((0, 0, w, int(h * 0.25)))
     quick = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
@@ -265,7 +270,6 @@ if uploaded_files:
                 df = pd.DataFrame([{"Thông báo": "Không có dữ liệu hợp lệ"}])
                 df.to_excel(writer, sheet_name="KET_QUA", index=False)
 
-        # format excel
         wb = load_workbook(tmp_excel.name)
 
         thin = Side(style='thin')
