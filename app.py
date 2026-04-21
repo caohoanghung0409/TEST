@@ -1,75 +1,75 @@
 import streamlit as st
-import pdfplumber
+import numpy as np
+from pdf2image import convert_from_bytes
+import easyocr
 import pandas as pd
 import re
 import io
 
-st.set_page_config(page_title="Fix Dứt Điểm Tiền Phong", layout="wide")
-st.title("✅ Trích xuất Nhựa Tiền Phong - Bản Final")
+st.set_page_config(page_title="Hệ thống Trích xuất Tiền Phong", layout="wide")
+st.title("🚀 Bản Fix Dứt Điểm - Nhận diện hình ảnh (EasyOCR)")
 
-uploaded_file = st.file_uploader("Upload file PDF", type="pdf")
+uploaded_file = st.file_uploader("Upload file PDF scan của bạn", type="pdf")
 
-def clean_text(t):
-    if not t: return ""
-    # Gom các ký tự rời rạc lại và xóa khoảng trắng thừa
-    return " ".join(t.split())
+# Khởi tạo bộ đọc OCR (chỉ chạy 1 lần để tiết kiệm thời gian)
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['vi', 'en'])
+
+reader = load_reader()
+
+def extract_data_from_image(img):
+    # Chuyển ảnh sang dạng mảng để OCR
+    results = reader.readtext(np.array(img), detail=0)
+    full_text = " ".join(results).upper()
+    
+    # Logic tìm kiếm mã số (Pattern năm 260x)
+    # 1. Tìm Ngày
+    date_match = re.search(r"(\d{2}/\d{2}/\d{4})", full_text)
+    ngay = date_match.group(1) if date_match else ""
+
+    # 2. Tìm PR/SO
+    pr = re.search(r"PR\s?(26\d{2}[\d\.]*)", full_text)
+    so = re.search(r"SO\s?(26\d{2}[\d\.]*)", full_text)
+    p_val = f"PR{pr.group(1)}" if pr else ""
+    s_val = f"SO{so.group(1)}" if so else ""
+    pr_so = f"{p_val}/{s_val}" if (p_val and s_val) else (p_val or s_val)
+
+    # 3. Tìm SM
+    sm = re.search(r"SM\s?(26\d{2}[\d\.,]*)", full_text)
+    sm_val = f"SM{sm.group(1).replace(',', '.')}" if sm else ""
+
+    return {"SM": sm_val, "PR/SO": pr_so, "NGÀY": ngay}
 
 if uploaded_file:
-    with st.spinner('Đang dùng thuật toán quét sâu...'):
-        results = []
-        stt = 1
+    with st.spinner('Đang dùng mắt thần OCR quét hình ảnh...'):
+        # Chuyển PDF thành ảnh (300 DPI để rõ nét nhất)
+        images = convert_from_bytes(uploaded_file.read(), dpi=300)
         
-        with pdfplumber.open(uploaded_file) as pdf:
-            for i, page in enumerate(pdf.pages):
-                # Trích xuất văn bản theo cụm (giúp trị lỗi chữ rời rạc)
-                text = page.extract_text()
-                if not text: continue
-                
-                text_upper = text.upper()
-                
-                # Điều kiện: Chỉ cần có mã PR hoặc SO hoặc SM hoặc Tiền Phong
-                # Vì file scan lỗi nên mình ưu tiên tìm mã số trước
-                has_identity = any(kw in text_upper for kw in ["PR26", "SO26", "SM26", "TIỀN PHONG", "TIEN PHONG"])
-                
-                if has_identity:
-                    # 1. Tìm Ngày
-                    date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
-                    ngay = date_match.group(1) if date_match else ""
+        final_data = []
+        for i, img in enumerate(images):
+            # Quét dữ liệu trang xuôi
+            data = extract_data_from_image(img)
+            
+            # Nếu không thấy mã, xoay 180 độ quét lại
+            if not data["SM"] and not data["PR/SO"]:
+                img_rotated = img.rotate(180)
+                data = extract_data_from_image(img_rotated)
+            
+            if data["SM"] or data["PR/SO"]:
+                data["STT"] = len(final_data) + 1
+                data["SỐ TRANG"] = i + 1
+                final_data.append(data)
 
-                    # 2. Tìm PR/SO (Dùng regex nới lỏng cho file scan)
-                    pr = re.search(r"PR\s?(\d{4}[\d\.]*)", text_upper)
-                    so = re.search(r"SO\s?(\d{4}[\d\.]*)", text_upper)
-                    
-                    p_val = f"PR{pr.group(1)}" if pr else ""
-                    s_val = f"SO{so.group(1)}" if so else ""
-                    
-                    pr_so = f"{p_val}/{s_val}" if (p_val and s_val) else (p_val or s_val)
-
-                    # 3. Tìm SM
-                    sm = re.search(r"SM\s?(\d{4}[\d\.,]*)", text_upper)
-                    sm_val = f"SM{sm.group(1).replace(',', '.')}" if sm else ""
-
-                    if pr_so or sm_val:
-                        results.append({
-                            "STT": stt,
-                            "SM": sm_val,
-                            "PR/SO": pr_so,
-                            "NGÀY": ngay,
-                            "SỐ TRANG": i + 1
-                        })
-                        stt += 1
-
-        if results:
-            df = pd.DataFrame(results)
-            st.success(f"Đã tìm thấy {len(df)} dòng dữ liệu!")
-            st.dataframe(df, use_container_width=True)
+        if final_data:
+            df = pd.DataFrame(final_data)
+            df = df[["STT", "SM", "PR/SO", "NGÀY", "SỐ TRANG"]]
+            st.success(f"Đã xử lý xong! Tìm thấy {len(df)} phiếu.")
+            st.table(df)
 
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Data')
-            
-            st.download_button(label="📥 Tải Excel", data=output.getvalue(), 
-                             file_name="KetQua_Final.xlsx", mime="application/vnd.ms-excel")
+                df.to_excel(writer, index=False)
+            st.download_button("📥 Tải file Excel", output.getvalue(), "KetQua.xlsx")
         else:
-            st.error("Không tìm thấy dữ liệu. File scan này có lớp chữ bị lỗi hoàn toàn.")
-            st.info("Mẹo: Nếu vẫn lỗi, hãy dùng Chrome mở file -> In -> Lưu PDF. Cách này chắc chắn 100% sẽ tạo lại lớp chữ sạch.")
+            st.error("Vẫn không tìm thấy dữ liệu. Hãy kiểm tra độ nét của file scan.")
