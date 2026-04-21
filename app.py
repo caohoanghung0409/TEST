@@ -5,7 +5,6 @@ import pandas as pd
 import re
 import tempfile
 import os
-import time
 import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
@@ -21,37 +20,20 @@ if "done" not in st.session_state:
     st.session_state.done = False
 if "clear_uploader" not in st.session_state:
     st.session_state.clear_uploader = False
-if "last_uploaded_names" not in st.session_state:
-    st.session_state.last_uploaded_names = []
-if "excel_file" not in st.session_state:
-    st.session_state.excel_file = None
 
 # =========================
-# HEADER
+# UI
 # =========================
-st.markdown("## 🚀 THL PDF → EXCEL")
-
-# =========================
-# UPLOAD
-# =========================
-uploader_key = "uploader_1" if not st.session_state.clear_uploader else "uploader_2"
+st.title("🚀 THL PDF → EXCEL")
 
 uploaded_files = st.file_uploader(
     "📂 Chọn file PDF",
     type=["pdf"],
-    accept_multiple_files=True,
-    key=uploader_key
+    accept_multiple_files=True
 )
 
-current_names = [f.name for f in uploaded_files] if uploaded_files else []
-
-if current_names != st.session_state.last_uploaded_names:
-    st.session_state.processing = False
-    st.session_state.done = False
-    st.session_state.last_uploaded_names = current_names
-
 # =========================
-# OCR
+# OCR CORE
 # =========================
 def ocr_extract(img):
 
@@ -61,54 +43,55 @@ def ocr_extract(img):
         text = text.replace("S0", "SO")
         return text
 
-    # 🔥 FIX: nới điều kiện header (tránh miss)
     def is_valid_header(text):
         t = text.upper()
-        return (
-            "TIEN PHONG" in t
-            or "NHUATIENPHONG" in t
-        )
+        return "TIEN PHONG" in t or "NHUATIENPHONG" in t
 
     def extract_from_text(text):
 
         if not is_valid_header(text):
             return None, None, None
 
-        lines = text.split("\n")
-
         sm = None
         prso = None
         date = None
+
+        lines = text.split("\n")
 
         for line in lines:
             raw = line.strip()
             clean = normalize(raw)
 
-            # SM
+            # ===== SM =====
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # PR/SO
+            # ===== PR + SO GHÉP =====
             if not prso:
-                m = re.search(r"(PR\d{4}\.\d{4}/SO\d{4}\.\d{4})", clean)
-                if m:
-                    prso = m.group(1)
 
-            # PR riêng
+                pr_match = re.search(r"P[R]\d{4}\.\d{4}", clean)
+                so_match = re.search(r"S[O]\d{4}\.\d{4}", clean)
+
+                if pr_match and so_match:
+                    pr_val = pr_match.group(0)
+                    so_val = so_match.group(0)
+                    prso = f"{pr_val}/{so_val}"
+
+            # ===== PR riêng =====
             if not prso:
-                m = re.search(r"(PR\d{4}\.\d{4})", clean)
+                m = re.search(r"P[R]\d{4}\.\d{4}", clean)
                 if m:
-                    prso = m.group(1)
+                    prso = m.group(0)
 
-            # SO fallback
+            # ===== SO fallback =====
             if not prso:
-                m = re.search(r"(SO\d{4}\.\d{4})", clean)
+                m = re.search(r"S[O]\d{4}\.\d{4}", clean)
                 if m:
-                    prso = m.group(1)
+                    prso = m.group(0)
 
-            # DATE
+            # ===== DATE =====
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -118,25 +101,19 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    # ===== CHECK HEADER NHANH =====
+    # ===== CHECK HEADER =====
     header = img.crop((0, 0, w, int(h * 0.25)))
-
-    quick_text = pytesseract.image_to_string(
-        header, lang='eng', config='--oem 3 --psm 6'
-    )
+    quick_text = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
     if not is_valid_header(quick_text):
         return None, None, None
 
-    # ===== OCR CHÍNH =====
+    # ===== OCR =====
     for variant in [
         img.crop((0, 0, w, int(h * 0.4))),
         img
     ]:
-        text = pytesseract.image_to_string(
-            variant, lang='eng', config='--oem 3 --psm 6'
-        )
-
+        text = pytesseract.image_to_string(variant, config='--oem 3 --psm 6')
         sm, prso, date = extract_from_text(text)
 
         if (sm or prso) and date:
@@ -177,7 +154,7 @@ if uploaded_files:
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
 
-            has_data = False  # 🔥 fix crash
+            has_data = False
 
             for f in uploaded_files:
 
@@ -192,9 +169,8 @@ if uploaded_files:
                     sheet_name = os.path.splitext(f.name)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # 🔥 nếu không có dữ liệu
             if not has_data:
-                df = pd.DataFrame([{"Thông báo": "Không tìm thấy dữ liệu hợp lệ"}])
+                df = pd.DataFrame([{"Thông báo": "Không tìm thấy dữ liệu"}])
                 df.to_excel(writer, sheet_name="KET_QUA", index=False)
 
         # format excel
