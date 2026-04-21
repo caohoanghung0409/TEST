@@ -122,12 +122,6 @@ def ocr_extract(img):
         t = text.upper()
         return "TIEN PHONG" in t or "NHUATIENPHONG" in t
 
-    def fix_pr(val):
-        # FIX QUAN TRỌNG: Rxxxx -> PRxxxx
-        if val.startswith("R"):
-            return "P" + val
-        return val
-
     def extract_from_text(text):
 
         if not is_valid_header(text):
@@ -141,36 +135,49 @@ def ocr_extract(img):
             raw = line.strip()
             clean = normalize(raw)
 
-            # SM
+            # ===== SM =====
             if not sm:
                 m = re.search(r"(SM\d{4}\.\d{4})", clean)
                 if m:
                     sm = m.group(1)
 
-            # PR + SO
+            # ===== PR + SO (ƯU TIÊN CHUẨN) =====
             if not prso:
                 pr_match = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
                 so_match = re.search(r"S[O0]\d{4}\.\d{4}", clean)
 
                 if pr_match and so_match:
-                    pr_val = fix_pr(pr_match.group(0)).replace("P8", "PR")
+                    pr_val = pr_match.group(0)
+                    if pr_val.startswith("R"):
+                        pr_val = "P" + pr_val
+                    pr_val = pr_val.replace("P8", "PR")
+
                     so_val = so_match.group(0).replace("S0", "SO")
                     prso = f"{pr_val}/{so_val}"
 
-            # PR riêng
+            # ===== FIX TRƯỜNG HỢP OCR MẤT CHỮ (CHỈ CÒN SỐ) =====
+            if not prso:
+                if "SO" in clean or "/" in clean:
+                    codes = re.findall(r"\d{4}\.\d{4}", clean)
+                    if len(codes) >= 2:
+                        prso = f"PR{codes[0]}/SO{codes[1]}"
+
+            # ===== PR riêng =====
             if not prso:
                 m = re.search(r"(P[R8]|R)\d{4}\.\d{4}", clean)
                 if m:
-                    val = fix_pr(m.group(0)).replace("P8", "PR")
-                    prso = val
+                    val = m.group(0)
+                    if val.startswith("R"):
+                        val = "P" + val
+                    prso = val.replace("P8", "PR")
 
-            # SO fallback
+            # ===== SO fallback =====
             if not prso:
                 m = re.search(r"S[O0]\d{4}\.\d{4}", clean)
                 if m:
                     prso = m.group(0).replace("S0", "SO")
 
-            # DATE
+            # ===== DATE =====
             if not date:
                 d = re.search(r"(\d{2}/\d{2}/\d{4})", raw)
                 if d:
@@ -180,7 +187,6 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    # check header nhanh
     header = img.crop((0, 0, w, int(h * 0.25)))
     quick = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
