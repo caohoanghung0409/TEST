@@ -30,7 +30,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -64,10 +64,6 @@ div.stButton > button {
     font-weight:600;
     font-size:15px;
     box-shadow:0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.25s ease;
-}
-div.stButton > button:hover {
-    transform: translateY(-2px) scale(1.02);
 }
 
 .new-btn button {
@@ -97,7 +93,6 @@ div.stButton > button:hover {
 .progress-bar {
     height:100%;
     background:linear-gradient(90deg,#3b82f6,#22c55e);
-    transition: width 0.3s ease;
 }
 
 .global-wrap { margin:15px 0; }
@@ -113,27 +108,6 @@ div.stButton > button:hover {
 .global-fill {
     height:100%;
     border-radius:999px;
-    transition: width 0.4s ease;
-}
-
-.global-fill::before {
-    content:"";
-    position:absolute;
-    width:100%;
-    height:100%;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.2) 0,
-        rgba(255,255,255,0.2) 10px,
-        transparent 10px,
-        transparent 20px
-    );
-    animation: move 1s linear infinite;
-}
-
-@keyframes move {
-    from { background-position: 0 0; }
-    to { background-position: 40px 0; }
 }
 
 .global-text {
@@ -186,15 +160,18 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR (FIX SM + PR)
 # =========================
 def ocr_extract(img):
 
     def read(image):
         text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
+
+        sm_list = re.findall(r"(SM\d{4}\.\d{4})", text)
+        pr_list = re.findall(r"(PR\d{4}\.\d{4})", text)
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-        return sm, date
+
+        return sm_list, pr_list, date.group(1) if date else None
 
     w, h = img.size
 
@@ -206,17 +183,17 @@ def ocr_extract(img):
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]:
-        sm, date = read(variant)
-        if sm and date:
-            return sm.group(1), date.group(1)
+        sm_list, pr_list, date = read(variant)
 
-    return None, None
+        if (sm_list or pr_list) and date:
+            return sm_list, pr_list, date
+
+    return [], [], None
 
 # =========================
-# GLOBAL BAR (CHỈ HIỂN THỊ ETA)
+# GLOBAL BAR
 # =========================
-def render_global_bar(percent, speed, eta):
-
+def render_global_bar(percent, eta):
     eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
 
     return f"""
@@ -253,7 +230,7 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
@@ -264,14 +241,24 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 </div>
 """, unsafe_allow_html=True)
 
-        sm, date = ocr_extract(img)
+        sm_list, pr_list, date = ocr_extract(img)
 
-        if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date,
-                "Trang": i
-            })
+        if date:
+            for sm in sm_list:
+                results.append({
+                    "Loại": "SM",
+                    "Số": sm,
+                    "Ngày": date,
+                    "Trang": i
+                })
+
+            for pr in pr_list:
+                results.append({
+                    "Loại": "PR",
+                    "Số": pr,
+                    "Ngày": date,
+                    "Trang": i
+                })
 
     return results
 
@@ -285,17 +272,13 @@ if uploaded_files:
 
     if not st.session_state.processing and not st.session_state.done:
 
-        st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
     if st.session_state.processing:
 
-        st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -364,9 +347,7 @@ if st.session_state.done:
         <iframe src="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" style="display:none;"></iframe>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="new-btn">', unsafe_allow_html=True)
     if st.button("🔄 XỬ LÝ FILE MỚI"):
         st.session_state.done = False
         st.session_state.clear_uploader = not st.session_state.clear_uploader
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
