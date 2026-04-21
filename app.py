@@ -5,7 +5,6 @@ import pandas as pd
 import re
 import tempfile
 import os
-import time
 import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
@@ -132,70 +131,89 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (FIX CHUẨN)
+# OCR (CHỐNG LỖI MẠNH)
 # =========================
 def ocr_extract(img):
 
     def normalize(text):
         text = text.upper()
-        text = text.replace("P8", "PR")
-        text = text.replace("S0", "SO")
-        text = text.replace(":", " ")
+        replace_map = {
+            "P8": "PR",
+            "R ": "PR",
+            "S0": "SO",
+            "O0": "O",
+            "0O": "O",
+            "|": "",
+            ":": " ",
+        }
+        for k, v in replace_map.items():
+            text = text.replace(k, v)
         text = re.sub(r"\s+", " ", text)
-        return text
+        return text.strip()
 
     def has_anchor(text):
-        return "NHUA" in text and "TIEN PHONG" in text
+        keywords = ["NHUA", "TIEN", "PHONG"]
+        return sum(1 for k in keywords if k in text) >= 2
 
-    def find_phieu(lines):
-        for i, l in enumerate(lines):
-            if "PHIEU GIAO HANG" in l:
-                return i
-        return -1
+    def is_phieu(line):
+        return ("PHIEU" in line or "PH1EU" in line) and ("GIAO" in line or "G1AO" in line)
 
-    def extract_zone(lines):
-        pattern = re.compile(
-            r"SO\s*(SM\d{4}\.\d{4}|PR\d{4}\.\d{4}\s*/\s*SO\d{4}\.\d{4}|SO\d{4}\.\d{4})\s*NGAY\s*(\d{2}/\d{2}/\d{4})"
+    def merge_lines(lines):
+        merged = []
+        for i in range(len(lines)):
+            merged.append(lines[i])
+            if i < len(lines) - 1:
+                merged.append(lines[i] + " " + lines[i+1])
+        return merged
+
+    def extract(lines):
+        code_pattern = re.compile(
+            r"(SM\d{4}\.\d{4}|PR\d{4}\.\d{4}\s*/\s*SO\d{4}\.\d{4}|SO\d{4}\.\d{4})"
         )
+        date_pattern = re.compile(r"\d{2}/\d{2}/\d{4}")
 
-        for l in lines:
-            m = pattern.search(l)
-            if m:
-                code = m.group(1).replace(" ", "")
-                date = m.group(2)
+        merged = merge_lines(lines)
+
+        for l in merged:
+            code = code_pattern.search(l)
+            date = date_pattern.search(l)
+
+            if code and date:
+                code_val = code.group(0).replace(" ", "")
+                date_val = date.group(0)
 
                 sm, prso = "", ""
-
-                if code.startswith("SM"):
-                    sm = code
+                if code_val.startswith("SM"):
+                    sm = code_val
                 else:
-                    prso = code
+                    prso = code_val
 
-                return sm, prso, date
+                return sm, prso, date_val
 
         return None, None, None
 
-    # xử lý 0° + 180°
     for variant in [img, img.rotate(180)]:
 
-        text = pytesseract.image_to_string(variant, config='--oem 3 --psm 6')
-        text_norm = normalize(text)
+        raw = pytesseract.image_to_string(variant, config='--oem 3 --psm 6')
+        text = normalize(raw)
 
-        # 1. anchor
-        if not has_anchor(text_norm):
+        if not has_anchor(text):
             continue
 
-        lines = [normalize(l) for l in text.split("\n") if l.strip()]
+        lines = [normalize(l) for l in raw.split("\n") if l.strip()]
 
-        # 2. tìm PHIẾU
-        idx = find_phieu(lines)
+        idx = -1
+        for i, l in enumerate(lines):
+            if is_phieu(l):
+                idx = i
+                break
+
         if idx == -1:
             continue
 
-        # 3. lấy vùng nhỏ bên dưới
-        zone = lines[idx: idx + 6]
+        zone = lines[idx: idx + 10]
 
-        sm, prso, date = extract_zone(zone)
+        sm, prso, date = extract(zone)
 
         if (sm or prso) and date:
             return sm, prso, date
