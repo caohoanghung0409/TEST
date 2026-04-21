@@ -109,7 +109,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# OCR (FIX NHẸ PR)
 # =========================
 def ocr_extract(img):
 
@@ -144,18 +144,21 @@ def ocr_extract(img):
                 if m:
                     sm = m.group(1)
 
-            # ===== PR + SO (CHỊU LỖI OCR) =====
+            # ===== PR + SO (FIX NHẸ) =====
             if not prso:
-                codes = re.findall(r"\d{4}\.\d{4}", clean)
+                pr_match = re.search(r"P[R8]\d{4}\.\d{4}", clean)
+                so_match = re.search(r"S[O0]\d{4}\.\d{4}", clean)
 
-                if len(codes) >= 2:
-                    prso = f"PR{codes[0]}/SO{codes[1]}"
+                if pr_match and so_match:
+                    pr_val = pr_match.group(0).replace("P8", "PR")
+                    so_val = so_match.group(0).replace("S0", "SO")
+                    prso = f"{pr_val}/{so_val}"
 
             # ===== PR riêng =====
             if not prso:
-                m = re.search(r"\d{4}\.\d{4}", clean)
+                m = re.search(r"P[R8]\d{4}\.\d{4}", clean)
                 if m:
-                    prso = f"PR{m.group(0)}"
+                    prso = m.group(0).replace("P8", "PR")
 
             # ===== SO fallback =====
             if not prso:
@@ -173,7 +176,6 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    # check header nhanh
     header = img.crop((0, 0, w, int(h * 0.25)))
     quick = pytesseract.image_to_string(header, config='--oem 3 --psm 6')
 
