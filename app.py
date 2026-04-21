@@ -38,21 +38,13 @@ header, #MainMenu, footer {visibility: hidden;}
 .block-container {padding-top: 0.5rem !important;}
 .stApp { background: #f1f5f9; }
 
-.header {
-    font-size:22px;
-    font-weight:700;
-    margin-bottom:10px;
-}
+.header { font-size:22px; font-weight:700; margin-bottom:10px; }
 
 [data-testid="stFileUploader"] {
     border: 2px dashed #93c5fd;
     padding: 25px;
     border-radius: 18px;
     background: white;
-    transition: 0.3s;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color:#3b82f6;
 }
 
 div.stButton > button {
@@ -62,17 +54,6 @@ div.stButton > button {
     border-radius:12px;
     padding:12px 24px;
     font-weight:600;
-    font-size:15px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.15);
-}
-
-.new-btn button {
-    background: linear-gradient(135deg,#f59e0b,#ef4444) !important;
-}
-
-.process-btn {
-    margin-top: 25px;
-    margin-bottom: 15px;
 }
 
 .file-row {
@@ -80,7 +61,6 @@ div.stButton > button {
     padding:10px;
     border-radius:12px;
     background:white;
-    box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
 
 .progress {
@@ -95,42 +75,16 @@ div.stButton > button {
     background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 
-.global-wrap { margin:15px 0; }
-
 .global-bar {
-    position:relative;
     height:20px;
     background:#e5e7eb;
     border-radius:999px;
     overflow:hidden;
+    margin-top:10px;
 }
-
 .global-fill {
     height:100%;
-    border-radius:999px;
-}
-
-.global-text {
-    position:absolute;
-    width:100%;
-    text-align:center;
-    font-size:12px;
-    font-weight:700;
-    top:0;
-    line-height:20px;
-}
-
-.global-meta {
-    display:flex;
-    justify-content:space-between;
-    font-size:13px;
-    margin-bottom:6px;
-}
-
-.loading {
-    font-size:14px;
-    color:#475569;
-    margin-top:10px;
+    background:linear-gradient(90deg,#3b82f6,#22c55e);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -160,54 +114,58 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (FIX SM + PR)
+# OCR (CHUẨN HEADER)
 # =========================
 def ocr_extract(img):
 
-    def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+    def read_lines(image):
+        text = pytesseract.image_to_string(
+            image, lang='eng', config='--oem 3 --psm 6'
+        )
 
-        sm_list = re.findall(r"(SM\d{4}\.\d{4})", text)
-        pr_list = re.findall(r"(PR\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        lines = text.split("\n")
 
-        return sm_list, pr_list, date.group(1) if date else None
+        sm_result = None
+        prso_result = None
+        date = None
+
+        for line in lines:
+            line_clean = line.strip().replace(" ", "")
+
+            # SM
+            if not sm_result:
+                m = re.search(r"(SM\d{4}\.\d{4})", line_clean)
+                if m:
+                    sm_result = m.group(1)
+
+            # PR/SO (lấy nguyên cụm)
+            if not prso_result:
+                m = re.search(r"(PR\d{4}\.\d{4}/SO\d{4}\.\d{4})", line_clean)
+                if m:
+                    prso_result = m.group(1)
+
+            # DATE
+            if not date:
+                d = re.search(r"(\d{2}/\d{2}/\d{4})", line)
+                if d:
+                    date = d.group(1)
+
+        return sm_result, prso_result, date
 
     w, h = img.size
 
     for variant in [
-        img,
         img.crop((0,0,w,int(h*0.4))),
-        img.rotate(180, expand=True),
+        img,
         img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True)
+        img.rotate(180, expand=True),
     ]:
-        sm_list, pr_list, date = read(variant)
+        sm, prso, date = read_lines(variant)
 
-        if (sm_list or pr_list) and date:
-            return sm_list, pr_list, date
+        if (sm or prso) and date:
+            return sm, prso, date
 
-    return [], [], None
-
-# =========================
-# GLOBAL BAR
-# =========================
-def render_global_bar(percent, eta):
-    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
-
-    return f"""
-<div class="global-wrap">
-    <div class="global-meta">
-        <div>⚡ {percent}%</div>
-        <div>⏳ {eta_text}</div>
-    </div>
-    <div class="global-bar">
-        <div class="global-fill" style="width:{percent}%; background:linear-gradient(90deg,#3b82f6,#22c55e);"></div>
-        <div class="global-text">{percent}%</div>
-    </div>
-</div>
-"""
+    return None, None, None
 
 # =========================
 # PROCESS
@@ -225,12 +183,11 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
         percent = int((i/total_pages)*100)
         global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
-        elapsed = time.time() - start_time
-        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
-        remaining = total_pages_all - processed_pages[0]
-        eta = int(remaining / speed) if speed > 0 else 0
-
-        global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
+        global_box.markdown(f"""
+        <div class="global-bar">
+            <div class="global-fill" style="width:{global_percent}%"></div>
+        </div>
+        """, unsafe_allow_html=True)
 
         box.markdown(f"""
 <div class="file-row">
@@ -241,24 +198,15 @@ def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_
 </div>
 """, unsafe_allow_html=True)
 
-        sm_list, pr_list, date = ocr_extract(img)
+        sm, prso, date = ocr_extract(img)
 
         if date:
-            for sm in sm_list:
-                results.append({
-                    "Loại": "SM",
-                    "Số": sm,
-                    "Ngày": date,
-                    "Trang": i
-                })
-
-            for pr in pr_list:
-                results.append({
-                    "Loại": "PR",
-                    "Số": pr,
-                    "Ngày": date,
-                    "Trang": i
-                })
+            results.append({
+                "SM": sm if sm else "",
+                "PR/SO": prso if prso else "",
+                "Ngày": date,
+                "Trang": i
+            })
 
     return results
 
@@ -271,14 +219,11 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
 
     if st.session_state.processing:
-
-        st.markdown('<div class="loading">⏳ Đang xử lý...</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
@@ -304,7 +249,6 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df)+1))
 
                     sheet_name = os.path.splitext(f.name)[0][:31]
-
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         wb = load_workbook(tmp_excel.name)
