@@ -4,3 +4,4 @@ pdf2image
 pandas
 openpyxl
 Pillow
+pip install PyPDF2
