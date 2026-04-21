@@ -186,7 +186,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (ĐÃ SỬA 2 HƯỚNG)
+# OCR (ĐÃ FIX 4 HƯỚNG)
 # =========================
 def ocr_extract(img):
 
@@ -196,9 +196,13 @@ def ocr_extract(img):
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
+    w, h = img.size
+
     for variant in [
         img,
-        img.rotate(180, expand=True)
+        img.crop((0,0,w,int(h*0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4)))
     ]:
         sm, date = read(variant)
         if sm and date:
