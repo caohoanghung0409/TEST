@@ -188,51 +188,45 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# HÀM BÓC TÁCH NHANH (REGEX & OCR)
+# OCR (GIỮ NGUYÊN LOGIC GỐC, TỐI ƯU THỨ TỰ THỰC THI)
 # =========================
-REGEX_SM = re.compile(r"(SM\d{4}\.\d{4})")
-REGEX_DATE = re.compile(r"(\d{2}/\d{2}/\d{4})")
+def ocr_extract(img):
+    def read(image):
+        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+        sm = re.search(r"(SM\d{4}\.\d{4})", text)
+        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        return sm, date
 
-# Giới hạn ký tự và chế độ nhận diện dòng đơn lẻ
-TESS_CONFIG = '--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789./SM -c load_system_dawg=0 -c load_freq_dawg=0'
-
-def parse_text(text):
-    if not text:
-        return None, None
-    sm = REGEX_SM.search(text)
-    date = REGEX_DATE.search(text)
-    return (sm.group(1) if sm else None), (date.group(1) if date else None)
-
-def fast_ocr_zone(img_zone):
-    # Chuyển sang ảnh xám và tăng độ tương phản để Tesseract đọc cực nhanh
-    gray = img_zone.convert('L')
-    # Nhị phân hóa (chữ đen, nền trắng hoàn toàn)
-    binary = gray.point(lambda p: 255 if p > 165 else 0)
-    text = pytesseract.image_to_string(binary, lang='eng', config=TESS_CONFIG)
-    return parse_text(text)
-
-def ocr_extract_optimized(img):
     w, h = img.size
 
-    # 1. Cắt riêng góc trên bên phải (Top-Right: nơi in SM và Ngày của phiếu giao hàng)
-    # Vùng này chỉ bằng 1/6 diện tích trang giấy -> OCR chạy cực kỳ nhanh (mất ~0.1s)
-    top_right = img.crop((int(w * 0.4), 0, w, int(h * 0.35)))
-    sm, date = fast_ocr_zone(top_right)
+    # Ưu tiên quét nửa trên (45%) trước để tiết kiệm thời gian nhất
+    crop_top = img.crop((0, 0, w, int(h * 0.45)))
+    sm, date = read(crop_top)
     if sm and date:
-        return sm, date
+        return sm.group(1), date.group(1)
 
-    # 2. Nếu thiếu, mở rộng quét toàn bộ nửa trên trang
-    top_half = img.crop((0, 0, w, int(h * 0.35)))
-    sm, date = fast_ocr_zone(top_half)
+    # Nếu chưa ra, quét toàn bộ trang gốc
+    sm, date = read(img)
     if sm and date:
-        return sm, date
+        return sm.group(1), date.group(1)
 
-    # 3. Chỉ khi giấy bị scan ngược 180 độ: xoay và cắt đúng vùng góc đầu
+    # Thử trường hợp bị ngược 180 độ
     img_180 = img.rotate(180, expand=True)
-    top_right_180 = img_180.crop((int(w * 0.4), 0, w, int(h * 0.35)))
-    sm, date = fast_ocr_zone(top_right_180)
+    crop_top_180 = img_180.crop((0, 0, w, int(h * 0.45)))
+    sm, date = read(crop_top_180)
     if sm and date:
-        return sm, date
+        return sm.group(1), date.group(1)
+
+    sm, date = read(img_180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # Cuối cùng thử xoay ngang (90, 270)
+    for rot in (90, 270):
+        img_rot = img.rotate(rot, expand=True)
+        sm, date = read(img_rot)
+        if sm and date:
+            return sm.group(1), date.group(1)
 
     return None, None
 
@@ -256,25 +250,16 @@ def render_global_bar(percent, eta):
 """
 
 # =========================
-# PROCESS CHÍNH
+# PROCESS
 # =========================
 def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
-
-    # BƯỚC 1: Thử đọc trực tiếp Text gốc từ PDF bằng PyPDF (mất 0.01s/trang)
-    pypdf_reader = None
-    try:
-        pypdf_reader = PdfReader(io.BytesIO(file_bytes))
-        total_pages = len(pypdf_reader.pages)
-    except Exception:
-        total_pages = 1
-
-    # BƯỚC 2: Chuyển đổi PDF sang ảnh với DPI=100 (tối ưu tốc độ, vừa chuẩn nét để OCR chữ to)
-    # Chỉ render ảnh khi cần
-    images = convert_from_bytes(file_bytes, dpi=100)
+    
+    # dpi=140: Giữ nguyên độ sắc nét cao giúp không bị mất chữ/nhầm số
+    images = convert_from_bytes(file_bytes, dpi=140)
     total_pages = len(images)
 
-    for i in range(1, total_pages + 1):
+    for i, img in enumerate(images, start=1):
         processed_pages[0] += 1
 
         percent = int((i / total_pages) * 100)
@@ -295,20 +280,7 @@ def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pa
 </div>
 """, unsafe_allow_html=True)
 
-        sm, date = None, None
-
-        # Cách A: Thử trích xuất trực tiếp từ Text gốc (nếu PDF có text thì không tốn 1ms nào cho OCR)
-        if pypdf_reader and (i - 1) < len(pypdf_reader.pages):
-            try:
-                raw_text = pypdf_reader.pages[i - 1].extract_text() or ""
-                sm, date = parse_text(raw_text)
-            except Exception:
-                pass
-
-        # Cách B: Nếu không có text gốc (ảnh scan), mới kích hoạt OCR vùng chọn
-        if not (sm and date):
-            img = images[i - 1]
-            sm, date = ocr_extract_optimized(img)
+        sm, date = ocr_extract(img)
 
         if sm and date:
             results.append({
@@ -342,7 +314,7 @@ if uploaded_files:
         file_data_list = []
         total_pages_all = 0
 
-        # Lấy trước số trang
+        # Đếm tổng số trang cực nhanh bằng PyPDF (mất 0.05s thay vì render ảnh làm đơ máy)
         for f in uploaded_files:
             b = f.read()
             file_data_list.append((f.name, b))
