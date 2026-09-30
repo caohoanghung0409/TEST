@@ -1,12 +1,15 @@
 import streamlit as st
 import pytesseract
 from pdf2image import convert_from_bytes
+from pypdf import PdfReader
 import pandas as pd
 import re
 import tempfile
 import os
 import time
 import base64
+import io
+from concurrent.futures import ThreadPoolExecutor
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -186,38 +189,57 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR
+# TỐI ƯU OCR
 # =========================
-def ocr_extract(img):
+# Giới hạn whitelist ký tự giúp Tesseract chạy nhanh hơn và ít nhận diện nhầm
+OCR_CONFIG = '--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789./SMabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
+def ocr_extract(img):
     def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
+        text = pytesseract.image_to_string(image, lang='eng', config=OCR_CONFIG)
         sm = re.search(r"(SM\d{4}\.\d{4})", text)
         date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
         return sm, date
 
     w, h = img.size
 
-    for variant in [
-        img,
-        img.crop((0,0,w,int(h*0.4))),
-        img.rotate(180, expand=True),
-        img.rotate(180, expand=True).crop((0,0,w,int(h*0.4))),
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True)
-    ]:
-        sm, date = read(variant)
+    # Ưu tiên crop 40% phần đầu trang (thường chứa Header: Số SM & Ngày)
+    header_crop = img.crop((0, 0, w, int(h * 0.4)))
+    sm, date = read(header_crop)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # Nếu chưa thấy, đọc toàn bộ ảnh gốc
+    sm, date = read(img)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # Nếu bị ngược hướng, chỉ thử xoay 180 (trường hợp scan ngược phổ biến nhất)
+    img_180 = img.rotate(180, expand=True)
+    header_180 = img_180.crop((0, 0, w, int(h * 0.4)))
+    sm, date = read(header_180)
+    if sm and date:
+        return sm.group(1), date.group(1)
+
+    # Cuối cùng mới quét các góc xoay ngang (90, 270)
+    for rot in (90, 270):
+        img_rot = img.rotate(rot, expand=True)
+        sm, date = read(img_rot)
         if sm and date:
             return sm.group(1), date.group(1)
 
     return None, None
 
+def process_single_page(args):
+    idx, img = args
+    sm, date = ocr_extract(img)
+    return idx, sm, date
+
 # =========================
 # GLOBAL BAR (CHỈ HIỂN THỊ ETA)
 # =========================
 def render_global_bar(percent, speed, eta):
-
-    eta_text = "Sắp xong..." if eta == 0 else f"{eta//60}m {eta%60}s"
+    eta_text = "Sắp xong..." if eta <= 0 else f"{eta//60}m {eta%60}s"
 
     return f"""
 <div class="global-wrap">
@@ -233,46 +255,51 @@ def render_global_bar(percent, speed, eta):
 """
 
 # =========================
-# PROCESS
+# PROCESS TẬN DỤNG MULTITHREADING
 # =========================
-def extract_pdf(file, box, global_box, start_time, processed_pages, total_pages_all):
-
+def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
-    images = convert_from_bytes(file.read(), dpi=150)
+    
+    # dpi=130 vừa đủ nét đọc text, nhẹ hơn 150 rất nhiều
+    images = convert_from_bytes(file_bytes, dpi=130)
     total_pages = len(images)
 
-    for i, img in enumerate(images, start=1):
+    # Dùng ThreadPool xử lý song song các trang trong file
+    # Số workers = 3 hoặc 4 tối ưu cho OCR trên CPU mà không nghẽn RAM
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = executor.map(process_single_page, enumerate(images, start=1))
 
-        processed_pages[0] += 1
+        for i, (page_num, sm, date) in enumerate(futures, start=1):
+            processed_pages[0] += 1
 
-        percent = int((i/total_pages)*100)
-        global_percent = int((processed_pages[0] / total_pages_all) * 100)
+            percent = int((i / total_pages) * 100)
+            global_percent = int((processed_pages[0] / total_pages_all) * 100)
 
-        elapsed = time.time() - start_time
-        speed = processed_pages[0] / elapsed if elapsed > 0 else 0
-        remaining = total_pages_all - processed_pages[0]
-        eta = int(remaining / speed) if speed > 0 else 0
+            elapsed = time.time() - start_time
+            speed = processed_pages[0] / elapsed if elapsed > 0 else 0
+            remaining = total_pages_all - processed_pages[0]
+            eta = int(remaining / speed) if speed > 0 else 0
 
-        global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
+            global_box.markdown(render_global_bar(global_percent, speed, eta), unsafe_allow_html=True)
 
-        box.markdown(f"""
+            box.markdown(f"""
 <div class="file-row">
-📄 {file.name} — Trang {i}/{total_pages} ({percent}%)
+📄 {file_name} — Trang {i}/{total_pages} ({percent}%)
 <div class="progress">
 <div class="progress-bar" style="width:{percent}%"></div>
 </div>
 </div>
 """, unsafe_allow_html=True)
 
-        sm, date = ocr_extract(img)
+            if sm and date:
+                results.append({
+                    "SM": sm,
+                    "Ngày": date,
+                    "Trang": page_num
+                })
 
-        if sm and date:
-            results.append({
-                "SM": sm,
-                "Ngày": date,
-                "Trang": i
-            })
-
+    # Giữ đúng thứ tự trang
+    results.sort(key=lambda x: x["Trang"])
     return results
 
 # =========================
@@ -284,55 +311,58 @@ if uploaded_files:
     boxes = [st.empty() for _ in uploaded_files]
 
     if not st.session_state.processing and not st.session_state.done:
-
         st.markdown('<div class="process-btn">', unsafe_allow_html=True)
-
         if st.button("🚀 Bắt đầu xử lý"):
             st.session_state.processing = True
             st.rerun()
-
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
-
         st.markdown('<div class="loading">⏳ Đang xử lý... vui lòng chờ</div>', unsafe_allow_html=True)
 
         start_time = time.time()
 
-        total_pages_all = sum(len(convert_from_bytes(f.read(), dpi=50)) for f in uploaded_files)
-        for f in uploaded_files:
-            f.seek(0)
+        # Đọc dữ liệu bytes vào RAM 1 lần tránh seek/re-read
+        file_data_list = []
+        total_pages_all = 0
 
+        # ĐẾM SỐ TRANG SIÊU TỐC bằng PyPDF (mất 0.05s thay vì render ảnh tốn cả phút)
+        for f in uploaded_files:
+            b = f.read()
+            file_data_list.append((f.name, b))
+            try:
+                reader = PdfReader(io.BytesIO(b))
+                total_pages_all += len(reader.pages)
+            except Exception:
+                total_pages_all += 1
+
+        total_pages_all = max(total_pages_all, 1)
         processed_pages = [0]
 
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
-
-            for i, f in enumerate(uploaded_files):
-
+            for i, (fname, fbytes) in enumerate(file_data_list):
                 data = extract_pdf(
-                    f, boxes[i], global_box,
+                    fbytes, fname, boxes[i], global_box,
                     start_time, processed_pages, total_pages_all
                 )
 
                 if data:
                     df = pd.DataFrame(data)
-                    df.insert(0, "STT", range(1, len(df)+1))
-
-                    sheet_name = os.path.splitext(f.name)[0][:31]
-
+                    df.insert(0, "STT", range(1, len(df) + 1))
+                    sheet_name = os.path.splitext(fname)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
+        # Định dạng Excel
         wb = load_workbook(tmp_excel.name)
-
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         for ws in wb.worksheets:
             for col in ws.columns:
                 max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+                ws.column_dimensions[col[0].column_letter].width = max(max_len + 3, 10)
 
             for row in ws.iter_rows():
                 for cell in row:
