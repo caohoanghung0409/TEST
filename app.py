@@ -1,7 +1,6 @@
 import streamlit as st
 import pytesseract
-from pdf2image import convert_from_bytes
-from pypdf import PdfReader
+import fitz  # Thư viện PyMuPDF siêu tốc
 import pandas as pd
 import re
 import tempfile
@@ -9,6 +8,7 @@ import os
 import time
 import base64
 import io
+from PIL import Image
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
@@ -32,7 +32,7 @@ if "excel_file" not in st.session_state:
     st.session_state.excel_file = None
 
 # =========================
-# STYLE (GIỮ NGUYÊN)
+# STYLE
 # =========================
 st.markdown("""
 <style>
@@ -188,18 +188,26 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (GIỮ NGUYÊN 100% CỦA CODE GỐC ĐỂ ĐẢM BẢO ĐỦ NỘI DUNG)
+# XỬ LÝ TRÍCH XUẤT NỘI DUNG (KẾT HỢP FITZ + OCR GỐC)
 # =========================
-def ocr_extract(img):
+REGEX_SM = re.compile(r"(SM\d{4}\.\d{4})")
+REGEX_DATE = re.compile(r"(\d{2}/\d{2}/\d{4})")
+
+def extract_from_text(text):
+    if not text:
+        return None, None
+    sm = REGEX_SM.search(text)
+    date = REGEX_DATE.search(text)
+    return (sm.group(1) if sm else None), (date.group(1) if date else None)
+
+def ocr_fallback(img):
+    """Giữ nguyên 100% các góc quay chuẩn ban đầu để không bị sót chữ"""
     def read(image):
         text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
-        sm = re.search(r"(SM\d{4}\.\d{4})", text)
-        date = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-        return sm, date
+        return extract_from_text(text)
 
     w, h = img.size
 
-    # Thứ tự quét chuẩn nguyên bản của bạn:
     for variant in [
         img,
         img.crop((0, 0, w, int(h * 0.4))),
@@ -210,7 +218,7 @@ def ocr_extract(img):
     ]:
         sm, date = read(variant)
         if sm and date:
-            return sm.group(1), date.group(1)
+            return sm, date
 
     return None, None
 
@@ -234,16 +242,13 @@ def render_global_bar(percent, eta):
 """
 
 # =========================
-# PROCESS
+# PROCESS TỐI ƯU
 # =========================
-def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf(doc, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
-    
-    # Giữ nguyên DPI=150 chuẩn xác của code gốc
-    images = convert_from_bytes(file_bytes, dpi=150)
-    total_pages = len(images)
+    total_pages = len(doc)
 
-    for i, img in enumerate(images, start=1):
+    for i in range(1, total_pages + 1):
         processed_pages[0] += 1
 
         percent = int((i / total_pages) * 100)
@@ -254,7 +259,6 @@ def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pa
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
-        # Cập nhật giao diện từng trang
         global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
         box.markdown(f"""
 <div class="file-row">
@@ -265,7 +269,22 @@ def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pa
 </div>
 """, unsafe_allow_html=True)
 
-        sm, date = ocr_extract(img)
+        page = doc[i - 1]
+        
+        # BƯỚC 1: Đọc nhanh từ luồng ký tự trực tiếp của trang (chỉ mất 0.002 giây)
+        raw_text = page.get_text()
+        sm, date = extract_from_text(raw_text)
+
+        # BƯỚC 2: Nếu file là ảnh scan (không có text), render ảnh bằng PyMuPDF (nhanh hơn pdf2image rất nhiều)
+        if not (sm and date):
+            # 150 DPI tương đương ma trận phóng to 150/72 ≈ 2.083
+            zoom = 150 / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            
+            # OCR bằng cấu trúc nguyên bản
+            sm, date = ocr_fallback(img)
 
         if sm and date:
             results.append({
@@ -296,19 +315,15 @@ if uploaded_files:
 
         start_time = time.time()
 
-        # Đọc dữ liệu vào bộ nhớ RAM
-        file_data_list = []
+        # Mở trực tiếp các tài liệu bằng PyMuPDF
+        docs = []
         total_pages_all = 0
 
-        # TỐI ƯU CỐT LÕI: Đếm số trang siêu tốc bằng PyPDF (mất 0.05 giây thay vì render ảnh làm tốn gấp đôi thời gian)
         for f in uploaded_files:
-            b = f.read()
-            file_data_list.append((f.name, b))
-            try:
-                reader = PdfReader(io.BytesIO(b))
-                total_pages_all += len(reader.pages)
-            except Exception:
-                total_pages_all += 1
+            file_bytes = f.read()
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            docs.append((f.name, doc))
+            total_pages_all += len(doc)
 
         total_pages_all = max(total_pages_all, 1)
         processed_pages = [0]
@@ -316,9 +331,9 @@ if uploaded_files:
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
-            for i, (fname, fbytes) in enumerate(file_data_list):
+            for i, (fname, doc) in enumerate(docs):
                 data = extract_pdf(
-                    fbytes, fname, boxes[i], global_box,
+                    doc, fname, boxes[i], global_box,
                     start_time, processed_pages, total_pages_all
                 )
 
@@ -328,7 +343,7 @@ if uploaded_files:
                     sheet_name = os.path.splitext(fname)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Định dạng bảng Excel
+        # Định dạng Excel
         wb = load_workbook(tmp_excel.name)
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -346,6 +361,10 @@ if uploaded_files:
                 cell.font = Font(bold=True)
 
         wb.save(tmp_excel.name)
+
+        # Đóng tài liệu
+        for _, doc in docs:
+            doc.close()
 
         st.session_state.excel_file = tmp_excel.name
         st.session_state.processing = False
