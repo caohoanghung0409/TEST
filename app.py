@@ -188,7 +188,7 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================
-# OCR (GIỮ NGUYÊN LOGIC GỐC, TỐI ƯU THỨ TỰ THỰC THI)
+# OCR (GIỮ NGUYÊN 100% CỦA CODE GỐC ĐỂ ĐẢM BẢO ĐỦ NỘI DUNG)
 # =========================
 def ocr_extract(img):
     def read(image):
@@ -199,32 +199,16 @@ def ocr_extract(img):
 
     w, h = img.size
 
-    # Ưu tiên quét nửa trên (45%) trước để tiết kiệm thời gian nhất
-    crop_top = img.crop((0, 0, w, int(h * 0.45)))
-    sm, date = read(crop_top)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    # Nếu chưa ra, quét toàn bộ trang gốc
-    sm, date = read(img)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    # Thử trường hợp bị ngược 180 độ
-    img_180 = img.rotate(180, expand=True)
-    crop_top_180 = img_180.crop((0, 0, w, int(h * 0.45)))
-    sm, date = read(crop_top_180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    sm, date = read(img_180)
-    if sm and date:
-        return sm.group(1), date.group(1)
-
-    # Cuối cùng thử xoay ngang (90, 270)
-    for rot in (90, 270):
-        img_rot = img.rotate(rot, expand=True)
-        sm, date = read(img_rot)
+    # Thứ tự quét chuẩn nguyên bản của bạn:
+    for variant in [
+        img,
+        img.crop((0, 0, w, int(h * 0.4))),
+        img.rotate(180, expand=True),
+        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.4))),
+        img.rotate(90, expand=True),
+        img.rotate(270, expand=True)
+    ]:
+        sm, date = read(variant)
         if sm and date:
             return sm.group(1), date.group(1)
 
@@ -255,8 +239,8 @@ def render_global_bar(percent, eta):
 def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
     
-    # dpi=140: Giữ nguyên độ sắc nét cao giúp không bị mất chữ/nhầm số
-    images = convert_from_bytes(file_bytes, dpi=140)
+    # Giữ nguyên DPI=150 chuẩn xác của code gốc
+    images = convert_from_bytes(file_bytes, dpi=150)
     total_pages = len(images)
 
     for i, img in enumerate(images, start=1):
@@ -270,6 +254,7 @@ def extract_pdf(file_bytes, file_name, box, global_box, start_time, processed_pa
         remaining = total_pages_all - processed_pages[0]
         eta = int(remaining / speed) if speed > 0 else 0
 
+        # Cập nhật giao diện từng trang
         global_box.markdown(render_global_bar(global_percent, eta), unsafe_allow_html=True)
         box.markdown(f"""
 <div class="file-row">
@@ -311,10 +296,11 @@ if uploaded_files:
 
         start_time = time.time()
 
+        # Đọc dữ liệu vào bộ nhớ RAM
         file_data_list = []
         total_pages_all = 0
 
-        # Đếm tổng số trang cực nhanh bằng PyPDF (mất 0.05s thay vì render ảnh làm đơ máy)
+        # TỐI ƯU CỐT LÕI: Đếm số trang siêu tốc bằng PyPDF (mất 0.05 giây thay vì render ảnh làm tốn gấp đôi thời gian)
         for f in uploaded_files:
             b = f.read()
             file_data_list.append((f.name, b))
@@ -342,7 +328,7 @@ if uploaded_files:
                     sheet_name = os.path.splitext(fname)[0][:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Định dạng viền và cột Excel
+        # Định dạng bảng Excel
         wb = load_workbook(tmp_excel.name)
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
