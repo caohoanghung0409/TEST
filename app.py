@@ -1,18 +1,19 @@
 import streamlit as st
+from pypdf import PdfReader
 import pytesseract
 from pdf2image import convert_from_bytes
-from PIL import Image, ImageEnhance, ImageFilter
 import pandas as pd
 import re
 import tempfile
 import os
 import time
 import base64
+import io
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
 # =========================================================
-# TỰ ĐỘNG NHẬN DIỆN ĐƯỜNG DẪN TESSERACT VÀ POPPLER (NẾU CÓ)
+# TỰ ĐỘNG NHẬN DIỆN ĐƯỜNG DẪN TESSERACT VÀ POPPLER
 # =========================================================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 TESSERACT_EXE = os.path.join(CURRENT_DIR, "tesseract", "tesseract.exe")
@@ -169,7 +170,7 @@ div.stButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL (SIÊU TỐC & CHÍNH XÁC)</div>', unsafe_allow_html=True)
 
 # =========================================================
 # FILE UPLOADER
@@ -191,43 +192,28 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================================================
-# BỘ LỌC VÀ NHẬN DIỆN CHÍNH XÁC CAO
+# BỘ LỌC THÔNG MINH TIỀN PHONG & REGEX
 # =========================================================
-# Nhận diện đặc trưng Tiền Phong ở phía trên
 REGEX_TIENPHONG = re.compile(
     r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong|Acumatica|PHIẾU\s*GIAO\s*HÀNG|PHIEU\s*GIAO\s*HANG)",
     re.IGNORECASE
 )
-
-# Nhận diện mã SM cực kỳ linh hoạt (kể cả dấu chấm, phẩy, khoảng trống, gạch nối hoặc dính liền)
 REGEX_SM = re.compile(r"SM\s*(\d{4})[\.\,\-\s\_]?(\d{4})", re.IGNORECASE)
-
-# Nhận diện Ngày
 REGEX_DATE = re.compile(r"(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})")
-
-def preprocess_image(image):
-    """Tăng tương phản giúp nét chữ thanh mảnh trên Acumatica/ERP rõ hơn"""
-    gray = image.convert('L')
-    enhancer = ImageEnhance.Contrast(gray)
-    enhanced = enhancer.enhance(1.8)
-    return enhanced
 
 def analyze_text(text):
     if not text:
         return None, None, False
 
-    # BẮT BUỘC có dấu hiệu của Tiền Phong hoặc tiêu đề Phiếu Giao Hàng
     if not REGEX_TIENPHONG.search(text):
         return None, None, False
 
-    # BẮT BUỘC có mã SM
     sm_match = REGEX_SM.search(text)
     if not sm_match:
         return None, None, True
 
     clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
 
-    # Lấy Ngày
     clean_date = ""
     date_context = re.search(r"Ng[àa]y[\s\:\.]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})", text, re.IGNORECASE)
     if date_context:
@@ -239,49 +225,28 @@ def analyze_text(text):
 
     return clean_sm, clean_date, True
 
-def ocr_extract(img):
+# OCR dự phòng gọn nhẹ (chỉ chạy khi không có text số)
+def ocr_fallback(img):
     w, h = img.size
+    # 1. Quét nửa trên 45% (chiều thẳng)
+    crop_top = img.crop((0, 0, w, int(h * 0.45)))
+    text = pytesseract.image_to_string(crop_top, lang='eng', config='--oem 3 --psm 6')
+    sm, date, is_tp = analyze_text(text)
+    if is_tp and sm:
+        return sm, date
 
-    # Chuẩn bị ảnh thường và ảnh đã tiền xử lý tăng nét
-    prep_img = preprocess_image(img)
-
-    # Danh sách các góc xoay và vùng cắt (ưu tiên nửa trên trước, sau đó là toàn trang)
-    variants = [
-        # 1. Chiều thẳng
-        img.crop((0, 0, w, int(h * 0.60))),
-        prep_img.crop((0, 0, w, int(h * 0.60))),
-        img,
-        prep_img,
-        # 2. Chiều lộn ngược 180 độ
-        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.60))),
-        prep_img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.60))),
-        img.rotate(180, expand=True),
-        # 3. Chiều quay ngang
-        img.rotate(90, expand=True),
-        img.rotate(270, expand=True)
-    ]
-
-    for variant in variants:
-        # Thử đọc với psm 6 (khối văn bản)
-        text = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 6')
-        sm, date, is_tp = analyze_text(text)
-        if is_tp and sm:
-            return sm, date
-
-        # Thử phụ trợ với psm 11 nếu chữ bị phân mảnh
-        text_sparse = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 11')
-        sm, date, is_tp = analyze_text(text_sparse)
-        if is_tp and sm:
-            return sm, date
+    # 2. Quét trường hợp ngược 180 độ
+    img_180 = img.rotate(180, expand=True)
+    crop_bottom = img_180.crop((0, 0, w, int(h * 0.45)))
+    text_180 = pytesseract.image_to_string(crop_bottom, lang='eng', config='--oem 3 --psm 6')
+    sm, date, is_tp = analyze_text(text_180)
+    if is_tp and sm:
+        return sm, date
 
     return None, None
 
-# =========================================================
-# THANH TIẾN TRÌNH TỔNG (ETA)
-# =========================================================
 def render_global_bar(percent, eta):
     eta_text = "Sắp xong..." if eta <= 0 else f"{eta//60}m {eta%60}s"
-
     return f"""
 <div class="global-wrap">
     <div class="global-meta">
@@ -296,13 +261,15 @@ def render_global_bar(percent, eta):
 """
 
 # =========================================================
-# TRÍCH XUẤT TỪNG FILE PDF
+# XỬ LÝ SIÊU TỐC TỪNG FILE PDF
 # =========================================================
-def extract_pdf(images, file_name, box, global_box, start_time, processed_pages, total_pages_all):
+def extract_pdf_fast(file_bytes, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
-    total_pages = len(images)
+    reader = PdfReader(io.BytesIO(file_bytes))
+    total_pages = len(reader.pages)
+    poppler_dir = POPPLER_BIN if os.path.exists(POPPLER_BIN) else None
 
-    for i, img in enumerate(images, start=1):
+    for i, page in enumerate(reader.pages, start=1):
         processed_pages[0] += 1
 
         percent = int((i / total_pages) * 100)
@@ -323,9 +290,24 @@ def extract_pdf(images, file_name, box, global_box, start_time, processed_pages,
 </div>
 """, unsafe_allow_html=True)
 
-        sm, date = ocr_extract(img)
+        # 1. ĐỌC TEXT TRỰC TIẾP (Siêu nhanh 0.005s, bắt trọn vẹn trang 23)
+        raw_text = page.extract_text() or ""
+        sm, date, is_tp = analyze_text(raw_text)
 
-        # CHỈ GHI NHẬN KHI THỎA MÃN TIỀN PHONG VÀ CÓ MÃ SM
+        # 2. DỰ PHÒNG OCR (Chỉ kích hoạt nếu trang là ảnh scan thuần)
+        if not (is_tp and sm):
+            try:
+                if poppler_dir:
+                    imgs = convert_from_bytes(file_bytes, first_page=i, last_page=i, dpi=130, poppler_path=poppler_dir)
+                else:
+                    imgs = convert_from_bytes(file_bytes, first_page=i, last_page=i, dpi=130)
+                if imgs:
+                    sm_ocr, date_ocr = ocr_fallback(imgs[0])
+                    if sm_ocr:
+                        sm, date = sm_ocr, date_ocr
+            except Exception:
+                pass
+
         if sm:
             results.append({
                 "SM": sm,
@@ -350,23 +332,19 @@ if uploaded_files:
         st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.processing:
-        st.markdown('<div class="loading">⏳ Đang xử lý chính xác từng trang... vui lòng chờ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="loading">⏳ Đang xử lý siêu tốc... vui lòng chờ</div>', unsafe_allow_html=True)
         start_time = time.time()
 
-        poppler_dir = POPPLER_BIN if os.path.exists(POPPLER_BIN) else None
-
-        file_images_list = []
+        file_data_list = []
         total_pages_all = 0
-
         for f in uploaded_files:
-            file_bytes = f.read()
-            # Dùng DPI 150 để đảm bảo nhận diện rõ nét từng con số
-            if poppler_dir:
-                imgs = convert_from_bytes(file_bytes, dpi=150, poppler_path=poppler_dir)
-            else:
-                imgs = convert_from_bytes(file_bytes, dpi=150)
-            file_images_list.append((f.name, imgs))
-            total_pages_all += len(imgs)
+            b = f.read()
+            file_data_list.append((f.name, b))
+            try:
+                r = PdfReader(io.BytesIO(b))
+                total_pages_all += len(r.pages)
+            except Exception:
+                total_pages_all += 1
 
         total_pages_all = max(total_pages_all, 1)
         processed_pages = [0]
@@ -374,9 +352,9 @@ if uploaded_files:
         tmp_excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
 
         with pd.ExcelWriter(tmp_excel.name, engine='openpyxl') as writer:
-            for i, (fname, images) in enumerate(file_images_list):
-                data = extract_pdf(
-                    images, fname, boxes[i], global_box,
+            for i, (fname, fbytes) in enumerate(file_data_list):
+                data = extract_pdf_fast(
+                    fbytes, fname, boxes[i], global_box,
                     start_time, processed_pages, total_pages_all
                 )
 
