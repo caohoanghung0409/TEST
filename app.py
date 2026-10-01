@@ -177,45 +177,70 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================================================
-# HÀM OCR GIỮ NGUYÊN 100% LOGIC ĐANG CHẠY CHUẨN TỪ BẢN LOCAL
+# BỘ LỌC CHÍNH XÁC NHỰA TIỀN PHONG & TRÍCH XUẤT SM + NGÀY
 # =========================================================
-REGEX_SM_SMART = re.compile(r"\bSM\s*(\d{4})[\.\,\-\s]?(\d{4})\b", re.IGNORECASE)
-REGEX_DATE = re.compile(r"(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4})")
+# Nhận diện Tiền Phong qua nhiều dấu hiệu đặc trưng ở nửa trên phiếu
+REGEX_TIENPHONG = re.compile(
+    r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong\.vn|Acumatica)",
+    re.IGNORECASE
+)
 
-def ocr_extract(img):
-    def read(image):
-        text = pytesseract.image_to_string(image, lang='eng', config='--oem 3 --psm 6')
-        
-        # 1. Tìm chính xác số SM
-        sm_match = REGEX_SM_SMART.search(text)
-        clean_sm = None
-        if sm_match:
-            clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
+# Bắt chính xác mã SM (chấp nhận dấu chấm, phẩy, gạch nối, khoảng trắng hoặc dính liền)
+REGEX_SM = re.compile(r"\bSM\s*(\d{4})[\.\,\-\s]?(\d{4})\b", re.IGNORECASE)
 
-        # 2. Tìm ngày
+# Bắt ngày định dạng dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy
+REGEX_DATE = re.compile(r"(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b)")
+
+def analyze_text(text):
+    if not text:
+        return None, None, False
+
+    # 1. BẮT BUỘC có dấu hiệu của Nhựa Tiền Phong
+    is_tp = bool(REGEX_TIENPHONG.search(text))
+    if not is_tp:
+        return None, None, False
+
+    # 2. Tìm mã SM
+    sm_match = REGEX_SM.search(text)
+    clean_sm = None
+    if sm_match:
+        clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
+
+    # 3. Tìm Ngày (ưu tiên tìm quanh vị trí chữ SM hoặc chữ Ngày:)
+    clean_date = ""
+    # Tìm đoạn văn bản quanh chữ "Ngày"
+    date_context = re.search(r"Ng[àa]y[\s\:\.]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})", text, re.IGNORECASE)
+    if date_context:
+        raw_d = date_context.group(1)
+        clean_date = re.sub(r"[\-\.]", "/", raw_d)
+    else:
+        # Nếu không có chữ "Ngày:", tìm ngày dạng dd/mm/yyyy bất kỳ trên vùng đó
         date_match = REGEX_DATE.search(text)
-        clean_date = ""
         if date_match:
             raw_d = date_match.group(1)
             clean_date = re.sub(r"[\-\.]", "/", raw_d)
 
-        return clean_sm, clean_date
+    return clean_sm, clean_date, True
 
+def ocr_extract(img):
     w, h = img.size
 
-    # Duyệt đầy đủ các biến thể xoay như bản local đang chạy ổn định
+    # Các biến thể xoay trang (ưu tiên quét nửa trên 50% trước để nhận diện chuẩn)
     variants = [
-        img.crop((0, 0, w, int(h * 0.55))),
+        img.crop((0, 0, w, int(h * 0.50))),
         img,
-        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.55))),
+        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.50))),
         img.rotate(180, expand=True),
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]
 
     for variant in variants:
-        sm, date = read(variant)
-        if sm:
+        text = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 6')
+        sm, date, is_tp = analyze_text(text)
+
+        # Điều kiện khắt khe: BẮT BUỘC là trang TIỀN PHONG và BẮT BUỘC có mã SM
+        if is_tp and sm:
             return sm, date
 
     return None, None
@@ -240,7 +265,7 @@ def render_global_bar(percent, eta):
 """
 
 # =========================================================
-# XỬ LÝ TRÍCH XUẤT TỪNG FILE PDF
+# TRÍCH XUẤT TỪNG FILE PDF
 # =========================================================
 def extract_pdf(images, file_name, box, global_box, start_time, processed_pages, total_pages_all):
     results = []
@@ -269,7 +294,7 @@ def extract_pdf(images, file_name, box, global_box, start_time, processed_pages,
 
         sm, date = ocr_extract(img)
 
-        # CHỈ LƯU KHI CÓ MÃ SM (BỎ QUA NẾU CHỈ LÀ PR HOẶC SO)
+        # CHỈ GHI NHẬN KHI THỎA MÃN ĐỦ CẢ 2 ĐIỀU KIỆN
         if sm:
             results.append({
                 "SM": sm,
@@ -297,7 +322,6 @@ if uploaded_files:
         st.markdown('<div class="loading">⏳ Đang xử lý chính xác từng trang... vui lòng chờ</div>', unsafe_allow_html=True)
         start_time = time.time()
 
-        # Render ảnh 1 lần duy nhất với DPI=140 (ở Linux Web không cần truyền poppler_path)
         file_images_list = []
         total_pages_all = 0
 
@@ -325,10 +349,10 @@ if uploaded_files:
                     df.insert(0, "STT", range(1, len(df) + 1))
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
                 else:
-                    df_empty = pd.DataFrame([{"Thông báo": "Không tìm thấy mã SM hợp lệ"}])
+                    df_empty = pd.DataFrame([{"Thông báo": "Không tìm thấy mã SM Tiền Phong hợp lệ"}])
                     df_empty.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Định dạng kẻ bảng Excel
+        # Kẻ bảng và định dạng Excel
         wb = load_workbook(tmp_excel.name)
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
