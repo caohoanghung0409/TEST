@@ -1,6 +1,7 @@
 import streamlit as st
 import pytesseract
 from pdf2image import convert_from_bytes
+from PIL import Image, ImageEnhance, ImageFilter
 import pandas as pd
 import re
 import tempfile
@@ -11,7 +12,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
 # =========================================================
-# TỰ ĐỘNG NHẬN DIỆN ĐƯỜNG DẪN TESSERACT VÀ POPPLER (LOCAL / CLOUD)
+# TỰ ĐỘNG NHẬN DIỆN ĐƯỜNG DẪN TESSERACT VÀ POPPLER (NẾU CÓ)
 # =========================================================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 TESSERACT_EXE = os.path.join(CURRENT_DIR, "tesseract", "tesseract.exe")
@@ -168,7 +169,7 @@ div.stButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header">🚀 THL PDF → EXCEL (NHẬN DIỆN TIỀN PHONG PHÍA NAM)</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
 
 # =========================================================
 # FILE UPLOADER
@@ -190,47 +191,43 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================================================
-# BỘ LỌC CẤU TRÚC PHÍA PHẢI: TÊN CÔNG TY & ĐỊA CHỈ NHÀ MÁY
+# BỘ LỌC VÀ NHẬN DIỆN CHÍNH XÁC CAO
 # =========================================================
-# Nhận diện chính xác cụm text bên phải logo
-REGEX_COMPANY_RIGHT = re.compile(
-    r"(THI[EẾ]U\s*NI[EÊ]N\s*TI[EỀ]N\s*PHONG|"
-    r"NH[UƯ][AẠ]\s*TI[EỀ]N\s*PHONG|"
-    r"[ĐD][oò]ng\s*An\s*2|"
-    r"nhuatienphong\.vn|"
-    r"tienphongnam\.com)",
+# Nhận diện đặc trưng Tiền Phong ở phía trên
+REGEX_TIENPHONG = re.compile(
+    r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong|Acumatica|PHIẾU\s*GIAO\s*HÀNG|PHIEU\s*GIAO\s*HANG)",
     re.IGNORECASE
 )
 
-# Nhận diện tiêu đề phiếu
-REGEX_PHIEU = re.compile(r"(PHI[EẾ]U\s*GIAO\s*H[AÀ]NG)", re.IGNORECASE)
+# Nhận diện mã SM cực kỳ linh hoạt (kể cả dấu chấm, phẩy, khoảng trống, gạch nối hoặc dính liền)
+REGEX_SM = re.compile(r"SM\s*(\d{4})[\.\,\-\s\_]?(\d{4})", re.IGNORECASE)
 
-# Bắt mã SM (bỏ qua PR, SO)
-REGEX_SM = re.compile(r"\bSM\s*(\d{4})[\.\,\-\s]?(\d{4})\b", re.IGNORECASE)
+# Nhận diện Ngày
+REGEX_DATE = re.compile(r"(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})")
 
-# Bắt ngày dd/mm/yyyy
-REGEX_DATE = re.compile(r"(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b)")
+def preprocess_image(image):
+    """Tăng tương phản giúp nét chữ thanh mảnh trên Acumatica/ERP rõ hơn"""
+    gray = image.convert('L')
+    enhancer = ImageEnhance.Contrast(gray)
+    enhanced = enhancer.enhance(1.8)
+    return enhanced
 
-def analyze_header_structure(text):
+def analyze_text(text):
     if not text:
         return None, None, False
 
-    # 1. KIỂM TRA ĐIỀU KIỆN CẤU TRÚC PHÍA PHẢI:
-    # Phải có Tên công ty / Địa chỉ Đồng An 2 / Web nhuatienphong
-    is_tienphong_corp = bool(REGEX_COMPANY_RIGHT.search(text))
-    has_phieu_giao_hang = bool(REGEX_PHIEU.search(text))
-
-    if not (is_tienphong_corp or has_phieu_giao_hang):
+    # BẮT BUỘC có dấu hiệu của Tiền Phong hoặc tiêu đề Phiếu Giao Hàng
+    if not REGEX_TIENPHONG.search(text):
         return None, None, False
 
-    # 2. KIỂM TRA MÃ SM DƯỚI PHIẾU GIAO HÀNG (Bỏ qua hoàn toàn PR, SO)
+    # BẮT BUỘC có mã SM
     sm_match = REGEX_SM.search(text)
     if not sm_match:
         return None, None, True
 
     clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
 
-    # 3. LẤY NGÀY
+    # Lấy Ngày
     clean_date = ""
     date_context = re.search(r"Ng[àa]y[\s\:\.]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})", text, re.IGNORECASE)
     if date_context:
@@ -245,19 +242,35 @@ def analyze_header_structure(text):
 def ocr_extract(img):
     w, h = img.size
 
-    # Các biến thể xoay trang
+    # Chuẩn bị ảnh thường và ảnh đã tiền xử lý tăng nét
+    prep_img = preprocess_image(img)
+
+    # Danh sách các góc xoay và vùng cắt (ưu tiên nửa trên trước, sau đó là toàn trang)
     variants = [
-        img.crop((0, 0, w, int(h * 0.55))),
+        # 1. Chiều thẳng
+        img.crop((0, 0, w, int(h * 0.60))),
+        prep_img.crop((0, 0, w, int(h * 0.60))),
         img,
-        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.55))),
+        prep_img,
+        # 2. Chiều lộn ngược 180 độ
+        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.60))),
+        prep_img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.60))),
         img.rotate(180, expand=True),
+        # 3. Chiều quay ngang
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
     ]
 
     for variant in variants:
+        # Thử đọc với psm 6 (khối văn bản)
         text = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 6')
-        sm, date, is_tp = analyze_header_structure(text)
+        sm, date, is_tp = analyze_text(text)
+        if is_tp and sm:
+            return sm, date
+
+        # Thử phụ trợ với psm 11 nếu chữ bị phân mảnh
+        text_sparse = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 11')
+        sm, date, is_tp = analyze_text(text_sparse)
         if is_tp and sm:
             return sm, date
 
@@ -312,7 +325,7 @@ def extract_pdf(images, file_name, box, global_box, start_time, processed_pages,
 
         sm, date = ocr_extract(img)
 
-        # CHỈ LƯU TRANG THỎA MÃN ĐIỀU KIỆN TIỀN PHONG VÀ CÓ MÃ SM
+        # CHỈ GHI NHẬN KHI THỎA MÃN TIỀN PHONG VÀ CÓ MÃ SM
         if sm:
             results.append({
                 "SM": sm,
@@ -347,7 +360,11 @@ if uploaded_files:
 
         for f in uploaded_files:
             file_bytes = f.read()
-            imgs = convert_from_bytes(file_bytes, dpi=140, poppler_path=poppler_dir)
+            # Dùng DPI 150 để đảm bảo nhận diện rõ nét từng con số
+            if poppler_dir:
+                imgs = convert_from_bytes(file_bytes, dpi=150, poppler_path=poppler_dir)
+            else:
+                imgs = convert_from_bytes(file_bytes, dpi=150)
             file_images_list.append((f.name, imgs))
             total_pages_all += len(imgs)
 
