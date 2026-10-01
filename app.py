@@ -11,6 +11,19 @@ from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Font
 
 # =========================================================
+# TỰ ĐỘNG NHẬN DIỆN ĐƯỜNG DẪN TESSERACT VÀ POPPLER (LOCAL / CLOUD)
+# =========================================================
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+TESSERACT_EXE = os.path.join(CURRENT_DIR, "tesseract", "tesseract.exe")
+POPPLER_BIN = os.path.join(CURRENT_DIR, "poppler", "Library", "bin")
+
+if not os.path.exists(POPPLER_BIN):
+    POPPLER_BIN = os.path.join(CURRENT_DIR, "poppler", "bin")
+
+if os.path.exists(TESSERACT_EXE):
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_EXE
+
+# =========================================================
 # CẤU HÌNH GIAO DIỆN
 # =========================================================
 st.set_page_config(page_title="THL PDF TO EXCEL", layout="wide")
@@ -155,7 +168,7 @@ div.stButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header">🚀 THL PDF → EXCEL</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL (KHÔNG SÓT TRANG)</div>', unsafe_allow_html=True)
 
 # =========================================================
 # FILE UPLOADER
@@ -179,57 +192,52 @@ if current_names != st.session_state.last_uploaded_names:
 # =========================================================
 # BỘ LỌC CHÍNH XÁC NHỰA TIỀN PHONG & TRÍCH XUẤT SM + NGÀY
 # =========================================================
-# Nhận diện Tiền Phong qua nhiều dấu hiệu đặc trưng ở nửa trên phiếu
 REGEX_TIENPHONG = re.compile(
-    r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong\.vn|Acumatica)",
+    r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong\.vn|Acumatica|PHIẾU\s*GIAO\s*HÀNG|PHIEU\s*GIAO\s*HANG)",
     re.IGNORECASE
 )
 
-# Bắt chính xác mã SM (chấp nhận dấu chấm, phẩy, gạch nối, khoảng trắng hoặc dính liền)
+# Bắt mã SM (bao gồm các biến thể dấu chấm, phẩy, gạch ngang hoặc khoảng trắng)
 REGEX_SM = re.compile(r"\bSM\s*(\d{4})[\.\,\-\s]?(\d{4})\b", re.IGNORECASE)
 
-# Bắt ngày định dạng dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy
+# Bắt ngày định dạng dd/mm/yyyy
 REGEX_DATE = re.compile(r"(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b)")
 
 def analyze_text(text):
     if not text:
         return None, None, False
 
-    # 1. BẮT BUỘC có dấu hiệu của Nhựa Tiền Phong
-    is_tp = bool(REGEX_TIENPHONG.search(text))
-    if not is_tp:
+    # BẮT BUỘC có dấu hiệu của Nhựa Tiền Phong hoặc tiêu đề Phiếu Giao Hàng
+    if not REGEX_TIENPHONG.search(text):
         return None, None, False
 
-    # 2. Tìm mã SM
+    # BẮT BUỘC có mã SM (bỏ qua nếu chỉ là PR hoặc SO)
     sm_match = REGEX_SM.search(text)
-    clean_sm = None
-    if sm_match:
-        clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
+    if not sm_match:
+        return None, None, True
 
-    # 3. Tìm Ngày (ưu tiên tìm quanh vị trí chữ SM hoặc chữ Ngày:)
+    clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
+
+    # Trích xuất Ngày
     clean_date = ""
-    # Tìm đoạn văn bản quanh chữ "Ngày"
     date_context = re.search(r"Ng[àa]y[\s\:\.]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})", text, re.IGNORECASE)
     if date_context:
-        raw_d = date_context.group(1)
-        clean_date = re.sub(r"[\-\.]", "/", raw_d)
+        clean_date = re.sub(r"[\-\.]", "/", date_context.group(1))
     else:
-        # Nếu không có chữ "Ngày:", tìm ngày dạng dd/mm/yyyy bất kỳ trên vùng đó
         date_match = REGEX_DATE.search(text)
         if date_match:
-            raw_d = date_match.group(1)
-            clean_date = re.sub(r"[\-\.]", "/", raw_d)
+            clean_date = re.sub(r"[\-\.]", "/", date_match.group(1))
 
     return clean_sm, clean_date, True
 
 def ocr_extract(img):
     w, h = img.size
 
-    # Các biến thể xoay trang (ưu tiên quét nửa trên 50% trước để nhận diện chuẩn)
+    # Quét vùng nửa trên trước, sau đó quét toàn trang và các góc xoay
     variants = [
-        img.crop((0, 0, w, int(h * 0.50))),
+        img.crop((0, 0, w, int(h * 0.55))),
         img,
-        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.50))),
+        img.rotate(180, expand=True).crop((0, 0, w, int(h * 0.55))),
         img.rotate(180, expand=True),
         img.rotate(90, expand=True),
         img.rotate(270, expand=True)
@@ -238,8 +246,6 @@ def ocr_extract(img):
     for variant in variants:
         text = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 6')
         sm, date, is_tp = analyze_text(text)
-
-        # Điều kiện khắt khe: BẮT BUỘC là trang TIỀN PHONG và BẮT BUỘC có mã SM
         if is_tp and sm:
             return sm, date
 
@@ -294,7 +300,6 @@ def extract_pdf(images, file_name, box, global_box, start_time, processed_pages,
 
         sm, date = ocr_extract(img)
 
-        # CHỈ GHI NHẬN KHI THỎA MÃN ĐỦ CẢ 2 ĐIỀU KIỆN
         if sm:
             results.append({
                 "SM": sm,
@@ -322,12 +327,14 @@ if uploaded_files:
         st.markdown('<div class="loading">⏳ Đang xử lý chính xác từng trang... vui lòng chờ</div>', unsafe_allow_html=True)
         start_time = time.time()
 
+        poppler_dir = POPPLER_BIN if os.path.exists(POPPLER_BIN) else None
+
         file_images_list = []
         total_pages_all = 0
 
         for f in uploaded_files:
             file_bytes = f.read()
-            imgs = convert_from_bytes(file_bytes, dpi=140)
+            imgs = convert_from_bytes(file_bytes, dpi=140, poppler_path=poppler_dir)
             file_images_list.append((f.name, imgs))
             total_pages_all += len(imgs)
 
@@ -352,7 +359,7 @@ if uploaded_files:
                     df_empty = pd.DataFrame([{"Thông báo": "Không tìm thấy mã SM Tiền Phong hợp lệ"}])
                     df_empty.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Kẻ bảng và định dạng Excel
+        # Định dạng kẻ bảng Excel
         wb = load_workbook(tmp_excel.name)
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
