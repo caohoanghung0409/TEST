@@ -168,7 +168,7 @@ div.stButton > button:hover {
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header">🚀 THL PDF → EXCEL (KHÔNG SÓT TRANG)</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 THL PDF → EXCEL (NHẬN DIỆN TIỀN PHONG PHÍA NAM)</div>', unsafe_allow_html=True)
 
 # =========================================================
 # FILE UPLOADER
@@ -190,35 +190,47 @@ if current_names != st.session_state.last_uploaded_names:
     st.session_state.last_uploaded_names = current_names
 
 # =========================================================
-# BỘ LỌC CHÍNH XÁC NHỰA TIỀN PHONG & TRÍCH XUẤT SM + NGÀY
+# BỘ LỌC CẤU TRÚC PHÍA PHẢI: TÊN CÔNG TY & ĐỊA CHỈ NHÀ MÁY
 # =========================================================
-REGEX_TIENPHONG = re.compile(
-    r"(TIEN\s*PHONG|TIỀN\s*PHONG|NHUATIENPHONG|TIENPHONGNAM|PLASTIC|Đồng\s*An|DVKH|nhuatienphong\.vn|Acumatica|PHIẾU\s*GIAO\s*HÀNG|PHIEU\s*GIAO\s*HANG)",
+# Nhận diện chính xác cụm text bên phải logo
+REGEX_COMPANY_RIGHT = re.compile(
+    r"(THI[EẾ]U\s*NI[EÊ]N\s*TI[EỀ]N\s*PHONG|"
+    r"NH[UƯ][AẠ]\s*TI[EỀ]N\s*PHONG|"
+    r"[ĐD][oò]ng\s*An\s*2|"
+    r"nhuatienphong\.vn|"
+    r"tienphongnam\.com)",
     re.IGNORECASE
 )
 
-# Bắt mã SM (bao gồm các biến thể dấu chấm, phẩy, gạch ngang hoặc khoảng trắng)
+# Nhận diện tiêu đề phiếu
+REGEX_PHIEU = re.compile(r"(PHI[EẾ]U\s*GIAO\s*H[AÀ]NG)", re.IGNORECASE)
+
+# Bắt mã SM (bỏ qua PR, SO)
 REGEX_SM = re.compile(r"\bSM\s*(\d{4})[\.\,\-\s]?(\d{4})\b", re.IGNORECASE)
 
-# Bắt ngày định dạng dd/mm/yyyy
+# Bắt ngày dd/mm/yyyy
 REGEX_DATE = re.compile(r"(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b)")
 
-def analyze_text(text):
+def analyze_header_structure(text):
     if not text:
         return None, None, False
 
-    # BẮT BUỘC có dấu hiệu của Nhựa Tiền Phong hoặc tiêu đề Phiếu Giao Hàng
-    if not REGEX_TIENPHONG.search(text):
+    # 1. KIỂM TRA ĐIỀU KIỆN CẤU TRÚC PHÍA PHẢI:
+    # Phải có Tên công ty / Địa chỉ Đồng An 2 / Web nhuatienphong
+    is_tienphong_corp = bool(REGEX_COMPANY_RIGHT.search(text))
+    has_phieu_giao_hang = bool(REGEX_PHIEU.search(text))
+
+    if not (is_tienphong_corp or has_phieu_giao_hang):
         return None, None, False
 
-    # BẮT BUỘC có mã SM (bỏ qua nếu chỉ là PR hoặc SO)
+    # 2. KIỂM TRA MÃ SM DƯỚI PHIẾU GIAO HÀNG (Bỏ qua hoàn toàn PR, SO)
     sm_match = REGEX_SM.search(text)
     if not sm_match:
         return None, None, True
 
     clean_sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
 
-    # Trích xuất Ngày
+    # 3. LẤY NGÀY
     clean_date = ""
     date_context = re.search(r"Ng[àa]y[\s\:\.]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})", text, re.IGNORECASE)
     if date_context:
@@ -233,7 +245,7 @@ def analyze_text(text):
 def ocr_extract(img):
     w, h = img.size
 
-    # Quét vùng nửa trên trước, sau đó quét toàn trang và các góc xoay
+    # Các biến thể xoay trang
     variants = [
         img.crop((0, 0, w, int(h * 0.55))),
         img,
@@ -245,7 +257,7 @@ def ocr_extract(img):
 
     for variant in variants:
         text = pytesseract.image_to_string(variant, lang='eng', config='--oem 3 --psm 6')
-        sm, date, is_tp = analyze_text(text)
+        sm, date, is_tp = analyze_header_structure(text)
         if is_tp and sm:
             return sm, date
 
@@ -300,6 +312,7 @@ def extract_pdf(images, file_name, box, global_box, start_time, processed_pages,
 
         sm, date = ocr_extract(img)
 
+        # CHỈ LƯU TRANG THỎA MÃN ĐIỀU KIỆN TIỀN PHONG VÀ CÓ MÃ SM
         if sm:
             results.append({
                 "SM": sm,
