@@ -281,7 +281,6 @@ st.markdown("""
 st.markdown("""
 <div style="text-align: center;">
     <h1 class="hero-title">Trích Xuất Số SM & Ngày Phiếu Giao Hàng</h1>
-    <p class="hero-sub">Mẫu Nhựa Tiền Phong • Tự động đếm trang • Xuất Excel nhiều sheet</p>
 </div>
 """, unsafe_allow_html=True)
 
