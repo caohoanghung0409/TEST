@@ -346,7 +346,7 @@ if uploaded_files:
         btn_placeholder = st.empty()
         if btn_placeholder.button("⚡ BẮT ĐẦU XỬ LÝ", type="primary", use_container_width=True, key="btn_start"):
             # Làm mờ nút ngay lập tức và vô hiệu hóa (disabled=True) trong lúc thanh trạng thái đang chạy
-            btn_placeholder.button("⏳ ĐANG TRÍCH XUẤT DỮ LIỆU...", type="primary", use_container_width=True, disabled=True, key="btn_disabled")
+            btn_placeholder.button("⏳ ĐANG XỬ LÝ DỮ LIỆU...", type="primary", use_container_width=True, disabled=True, key="btn_disabled")
             
             with st.spinner("Đang chuẩn bị quét dữ liệu..."):
                 pages_per_file = []
