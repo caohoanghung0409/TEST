@@ -332,7 +332,7 @@ if uploaded_files:
         start_time = time.time()
         
         file_results = []
-        pages_processed_so_far = 0
+        tracker = {'pages_done': 0}
         total_extracted_all = 0
         
         for f_idx, up_file in enumerate(uploaded_files):
@@ -341,8 +341,8 @@ if uploaded_files:
             f_pages = pages_per_file[f_idx]
             
             def on_page_done(page_num, total_p):
-                nonlocal pages_processed_so_far
-                pages_processed_so_far += 1
+                tracker['pages_done'] += 1
+                pages_processed_so_far = tracker['pages_done']
                 
                 elapsed = time.time() - start_time
                 avg_time = elapsed / pages_processed_so_far
