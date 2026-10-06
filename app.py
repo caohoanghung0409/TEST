@@ -1,3 +1,106 @@
+"""
+ỨNG DỤNG WEB TRÍCH XUẤT SỐ SM & NGÀY (NHỰA TIỀN PHONG)
+- Giao diện hiện đại (Modern SaaS UI).
+- Đếm ngược thời gian xử lý theo thời gian thực (ví dụ từ 60s về 1s).
+- Tự động download file Excel về máy ngay khi hoàn tất.
+- Nút "XỬ LÝ FILE MỚI" để làm mới trang (refresh) trở lại trạng thái ban đầu.
+- Hỗ trợ đa file, đa sheet (tên sheet = tên file PDF).
+"""
+
+import os
+import sys
+import re
+import io
+import time
+import base64
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import pypdfium2 as pdfium
+import pytesseract
+from PIL import Image
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
+
+# ==================== CẤU HÌNH TESSERACT OCR ====================
+def setup_tesseract():
+    if os.name == 'nt':
+        default_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "Tesseract-OCR", "tesseract.exe"),
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe")
+        ]
+        for path in default_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                return
+
+setup_tesseract()
+
+# ==================== HÀM TIỆN ÍCH ====================
+def sanitize_sheet_name(name, existing_names):
+    """Quy chuẩn tên Sheet trong Excel (tối đa 31 ký tự, loại bỏ ký tự cấm)"""
+    if name.lower().endswith('.pdf'):
+        name = name[:-4]
+    clean_name = re.sub(r'[\/\\\?\*\[\]\:]', '_', name).strip()
+    if not clean_name:
+        clean_name = "Sheet"
+    base_name = clean_name[:31]
+    final_name = base_name
+    counter = 1
+    while final_name.lower() in existing_names:
+        suffix = f"_{counter}"
+        max_len = 31 - len(suffix)
+        final_name = base_name[:max_len] + suffix
+        counter += 1
+    existing_names.add(final_name.lower())
+    return final_name
+
+def extract_from_single_pdf(file_bytes, page_callback=None):
+    """Trích xuất SM và Ngày từ 1 file PDF"""
+    pdf = pdfium.PdfDocument(file_bytes)
+    total_pages = len(pdf)
+    records = []
+    
+    for page_idx in range(total_pages):
+        page_num = page_idx + 1
+        page = pdf[page_idx]
+        bitmap = page.render(scale=2.0)
+        img = bitmap.to_pil()
+        w, h = img.size
+        
+        # Cắt 30% đầu trang
+        crop = img.crop((0, 0, w, int(h * 0.30)))
+        try:
+            text = pytesseract.image_to_string(crop, lang='eng')
+        except Exception:
+            text = ""
+            
+        text_u = text.upper()
+        is_tp = ('TIEN PHONG' in text_u or 'THIEU NIEN' in text_u or 'NHUATIENPHONG' in text_u)
+        
+        if is_tp:
+            sm_match = re.search(r'[\$S§s]M[\s\.:,]*([0-9]{4})[\.,\s_]*([0-9]{4})', text)
+            if not sm_match:
+                sm_match = re.search(r'[\$S§s]M[\s\.:,]*([0-9]{4,8})', text)
+                val = sm_match.group(1) if sm_match else ""
+                sm = f"SM{val[:4]}.{val[4:]}" if len(val) == 8 else (f"SM{val}" if val else None)
+            else:
+                sm = f"SM{sm_match.group(1)}.{sm_match.group(2)}"
+                
+            date_match = re.search(r'Ng[aàeè]y[\s;:,-]*([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text, re.IGNORECASE)
+            if not date_match:
+                date_match = re.search(r'([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text)
+                
+            if date_match:
+                d_val = int(date_match.group(1))
+                m_val = int(date_match.group(2))
+                y_val = date_match.group(3)
+                dt = f"{d_val:02d}/{m_val:02d}/{y_val}"
+            else:
+                dt = None
+                
             if sm and dt:
                 records.append({
                     'sm': sm,
