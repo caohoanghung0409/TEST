@@ -318,7 +318,7 @@ st.markdown("""
 
 # Khung Upload
 uploaded_files = st.file_uploader(
-    "Chọn hoặc kéo thả các file PDF scan vào đây:", 
+    "Thêm file PDF vào đây:", 
     type=["pdf"], 
     accept_multiple_files=True,
     help="Có thể chọn nhiều file. Bấm dấu ✖ bên cạnh file để xóa nếu chọn nhầm."
