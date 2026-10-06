@@ -469,7 +469,6 @@ if st.session_state.get('completed', False):
     # Dòng trợ giúp nhỏ
     st.markdown("""
     <div style='text-align: center; margin-top: 10px; font-size: 12px; color: #64748B;'>
-        💡 <b>Mẹo tự động mở file trên trình duyệt:</b> Nhấp chuột phải vào file <code>PDF-TO-EXCEL.xlsx</code> vừa tải ở góc trình duyệt ➔ Chọn <i>"Luôn mở các tệp loại này"</i> để máy tự bật Excel mỗi khi tải xong!
     </div>
     """, unsafe_allow_html=True)
     
