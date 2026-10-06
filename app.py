@@ -312,7 +312,8 @@ st.markdown("""
 # Header
 st.markdown("""
 <div class="pro-header">
-    <h1 class="pro-title">Trích Xuất SM</h1>
+    <h1 class="pro-title">Trích Xuất Số SM & Ngày Phiếu Giao Hàng</h1>
+    <p class="pro-sub">Nhận diện mẫu Tiền Phong • Tự động đếm trang • Xuất file Excel đa sheet</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -343,7 +344,10 @@ if uploaded_files:
     
     # 1. NÚT "BẮT ĐẦU TRÍCH XUẤT" (Chỉ hiện khi CHƯA xử lý xong)
     if 'completed' not in st.session_state:
-        if st.button("⚡ BẮT ĐẦU TRÍCH XUẤT", type="primary", use_container_width=True):
+        btn_placeholder = st.empty()
+        if btn_placeholder.button("⚡ BẮT ĐẦU TRÍCH XUẤT", type="primary", use_container_width=True, key="btn_start"):
+            # Làm mờ nút ngay lập tức và vô hiệu hóa (disabled=True) trong lúc thanh trạng thái đang chạy
+            btn_placeholder.button("⏳ ĐANG TRÍCH XUẤT DỮ LIỆU...", type="primary", use_container_width=True, disabled=True, key="btn_disabled")
             
             with st.spinner("Đang chuẩn bị quét dữ liệu..."):
                 pages_per_file = []
@@ -469,6 +473,7 @@ if st.session_state.get('completed', False):
     # Dòng trợ giúp nhỏ
     st.markdown("""
     <div style='text-align: center; margin-top: 10px; font-size: 12px; color: #64748B;'>
+        💡 <b>Mẹo tự động mở file trên trình duyệt:</b> Nhấp chuột phải vào file <code>PDF-TO-EXCEL.xlsx</code> vừa tải ở góc trình duyệt ➔ Chọn <i>"Luôn mở các tệp loại này"</i> để máy tự bật Excel mỗi khi tải xong!
     </div>
     """, unsafe_allow_html=True)
     
