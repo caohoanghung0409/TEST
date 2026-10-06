@@ -341,10 +341,10 @@ if uploaded_files:
     total_files = len(uploaded_files)
     st.caption(f"📁 Đang chọn **{total_files}** file PDF.")
     
-    # 1. NÚT "BẮT ĐẦU TRÍCH XUẤT" (Chỉ hiện khi CHƯA xử lý xong)
+    # 1. NÚT "BẮT ĐẦU XỬ LÝ" (Chỉ hiện khi CHƯA xử lý xong)
     if 'completed' not in st.session_state:
         btn_placeholder = st.empty()
-        if btn_placeholder.button("⚡ BẮT ĐẦU TRÍCH XUẤT", type="primary", use_container_width=True, key="btn_start"):
+        if btn_placeholder.button("⚡ BẮT ĐẦU XỬ LÝ", type="primary", use_container_width=True, key="btn_start"):
             # Làm mờ nút ngay lập tức và vô hiệu hóa (disabled=True) trong lúc thanh trạng thái đang chạy
             btn_placeholder.button("⏳ ĐANG TRÍCH XUẤT DỮ LIỆU...", type="primary", use_container_width=True, disabled=True, key="btn_disabled")
             
