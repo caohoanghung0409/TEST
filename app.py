@@ -312,7 +312,7 @@ st.markdown("""
 # Header
 st.markdown("""
 <div class="pro-header">
-    <h1 class="pro-title">Trích Xuất SM</h1>
+    <h1 class="pro-title">XỬ LÝ SM PDF TO EXCEL</h1>
 </div>
 """, unsafe_allow_html=True)
 
