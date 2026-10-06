@@ -1,11 +1,10 @@
 """
 ỨNG DỤNG WEB TRÍCH XUẤT SỐ SM & NGÀY (NHỰA TIỀN PHONG)
-- Giao diện siêu gọn (Fit 1 màn hình, không cần cuộn chuột).
-- Đã bỏ badge "Công cụ tự động hóa", giảm khoảng trắng thừa phía trên.
-- Ẩn nút "BẮT ĐẦU TRÍCH XUẤT" khi đã xử lý xong.
-- Hiển thị thời gian đủ cả PHÚT và GIÂY.
-- Đổi vị trí: Cột 1 là THÔNG TIN FILE, Cột 2 là TIẾN ĐỘ, Cột 3 là THỜI GIAN CÒN LẠI.
-- Tự động download và có nút "🔄 XỬ LÝ FILE MỚI" để reset trang.
+- Tên file Excel cố định: PDF-TO-EXCEL.xlsx
+- Tự động download ngay khi quét xong (đã sửa triệt để lỗi không tự tải).
+- Đếm ngược thời gian (phút & giây).
+- Đổi vị trí: File ở đầu, Thời gian ở cuối.
+- Giao diện siêu gọn 1 màn hình.
 """
 
 import os
@@ -175,29 +174,35 @@ def create_excel_multi_sheet(file_results):
     buf.seek(0)
     return buf.getvalue()
 
-def trigger_auto_download(file_bytes, filename):
-    """Tự động kích hoạt tải file về máy qua JavaScript"""
+def render_auto_downloader(file_bytes, filename):
+    """
+    Tự động kích hoạt tải file về máy người dùng bằng JavaScript.
+    Chạy trực tiếp từ cửa sổ trình duyệt chính.
+    """
     b64 = base64.b64encode(file_bytes).decode()
     js_code = f"""
     <script>
-        (function() {{
+        function triggerDownload() {{
             try {{
-                var doc = window.parent.document || document;
-                var a = doc.createElement('a');
+                var targetDoc = (window.parent && window.parent.document) ? window.parent.document : document;
+                var a = targetDoc.createElement('a');
                 a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}';
                 a.download = '{filename}';
-                doc.body.appendChild(a);
+                targetDoc.body.appendChild(a);
                 a.click();
-                doc.body.removeChild(a);
+                setTimeout(function() {{
+                    try {{ targetDoc.body.removeChild(a); }} catch(err) {{}}
+                }}, 1000);
             }} catch(e) {{
-                var a = document.createElement('a');
-                a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}';
-                a.download = '{filename}';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                var a2 = document.createElement('a');
+                a2.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}';
+                a2.download = '{filename}';
+                document.body.appendChild(a2);
+                a2.click();
             }}
-        }})();
+        }}
+        // Kích hoạt ngay lập tức
+        setTimeout(triggerDownload, 300);
     </script>
     """
     components.html(js_code, height=0, width=0)
@@ -209,22 +214,19 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom CSS: Giảm tối đa khoảng trắng trên đầu, vừa khít 1 màn hình
+# Custom CSS: Vừa vặn 1 trang, không cần cuộn chuột
 st.markdown("""
 <style>
-    /* Ẩn hoàn toàn header, menu, footer của Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Thu gọn khoảng cách đỉnh trang (loại bỏ vùng trống phía trên) */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0.5rem !important;
         max-width: 820px !important;
     }
     
-    /* Tiêu đề gọn gàng */
     .hero-title {
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
         font-size: 24px;
@@ -244,7 +246,6 @@ st.markdown("""
         margin-bottom: 12px;
     }
     
-    /* Metric hộp nhỏ gọn */
     .metric-box {
         background: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -264,7 +265,6 @@ st.markdown("""
         font-weight: 500;
     }
     
-    /* Thành công banner gọn gàng */
     .success-banner {
         background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
         border: 1px solid #A7F3D0;
@@ -277,10 +277,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header gọn gàng (Đã bỏ badge "Công cụ tự động hóa")
+# Header gọn gàng
 st.markdown("""
 <div style="text-align: center;">
     <h1 class="hero-title">Trích Xuất Số SM & Ngày Phiếu Giao Hàng</h1>
+    <p class="hero-sub">Mẫu Nhựa Tiền Phong • Tự động đếm trang • Xuất Excel nhiều sheet</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -297,10 +298,9 @@ if uploaded_files:
     st.caption(f"📁 Đã chọn **{total_files}** file PDF.")
     
     # 1. NÚT "BẮT ĐẦU TRÍCH XUẤT" (Chỉ hiện khi CHƯA xử lý xong)
-    if 'excel_data' not in st.session_state:
+    if 'completed' not in st.session_state:
         if st.button("⚡ BẮT ĐẦU TRÍCH XUẤT", type="primary", use_container_width=True):
             
-            # Đếm tổng số trang trước
             with st.spinner("Đang chuẩn bị quét dữ liệu..."):
                 pages_per_file = []
                 for f in uploaded_files:
@@ -311,12 +311,9 @@ if uploaded_files:
                         pages_per_file.append(1)
                 total_pages_all = sum(pages_per_file)
 
-            # Dashboard tiến trình & đếm ngược
             progress_bar = st.progress(0.0)
             
-            # Cột 1: THÔNG TIN FILE (Đưa lên đầu)
-            # Cột 2: TIẾN ĐỘ (%)
-            # Cột 3: THỜI GIAN CÒN LẠI (Đưa về cuối)
+            # Cột 1: File (Đầu) | Cột 2: Tiến độ | Cột 3: Thời gian (Cuối)
             col_file, col_progress, col_time = st.columns(3)
             file_placeholder = col_file.empty()
             progress_placeholder = col_progress.empty()
@@ -344,7 +341,7 @@ if uploaded_files:
                     pct = min(pages_done / total_pages_all, 1.0)
                     progress_bar.progress(pct)
                     
-                    # 1. CỘT ĐẦU TIÊN: File 1/1 và Tên file
+                    # Cột 1: THÔNG TIN FILE (Ở ĐẦU)
                     file_placeholder.markdown(f"""
                     <div class="metric-box">
                         <div class="metric-val" style="color: #D97706;">File {f_idx + 1}/{total_files}</div>
@@ -352,7 +349,7 @@ if uploaded_files:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 2. CỘT GIỮA: Tiến độ % và số trang
+                    # Cột 2: TIẾN ĐỘ (%)
                     progress_placeholder.markdown(f"""
                     <div class="metric-box">
                         <div class="metric-val" style="color: #059669;">{int(pct * 100)}%</div>
@@ -360,7 +357,7 @@ if uploaded_files:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 3. CỘT CUỐI: Thời gian đếm ngược (đủ cả PHÚT và GIÂY)
+                    # Cột 3: THỜI GIAN CÒN LẠI (Ở CUỐI - CẢ PHÚT VÀ GIÂY)
                     time_placeholder.markdown(f"""
                     <div class="metric-box">
                         <div class="metric-val" style="color: #2563EB;">⏳ {format_time_str(remaining_sec)}</div>
@@ -375,49 +372,50 @@ if uploaded_files:
             total_time_spent = int(time.time() - start_time)
             progress_bar.progress(1.0)
             
-            # Tạo file Excel
+            # Tạo file Excel - TÊN FILE ĐỒNG NHẤT: PDF-TO-EXCEL.xlsx
             excel_bytes = create_excel_multi_sheet(file_results)
-            if total_files == 1:
-                out_name = f"{os.path.splitext(uploaded_files[0].name)[0]}_KetQua_SM.xlsx"
-            else:
-                out_name = "TongHop_So_SM_TienPhong.xlsx"
-                
-            # Tự động tải về máy
-            trigger_auto_download(excel_bytes, out_name)
+            out_name = "PDF-TO-EXCEL.xlsx"
             
-            # Lưu session để chuyển trạng thái (Ẩn nút Bắt đầu trích xuất)
+            # Lưu session để chuyển trạng thái và hiển thị màn hình hoàn thành
             st.session_state['excel_data'] = excel_bytes
             st.session_state['excel_name'] = out_name
             st.session_state['total_files'] = total_files
             st.session_state['total_extracted'] = total_extracted_all
             st.session_state['total_time_str'] = format_time_str(total_time_spent)
+            st.session_state['completed'] = True
             st.rerun()
 
-# ==================== KHI XỬ LÝ XONG: ẨN NÚT CŨ, HIỆN KẾT QUẢ VÀ NÚT MỚI ====================
-if 'excel_data' in st.session_state:
+# ==================== MÀN HÌNH HOÀN THÀNH ====================
+if st.session_state.get('completed', False):
+    out_name = st.session_state['excel_name']
+    excel_bytes = st.session_state['excel_data']
+    
+    # Kích hoạt tự động tải file về máy
+    render_auto_downloader(excel_bytes, out_name)
+    
     st.markdown(f"""
     <div class="success-banner">
         <h4 style="margin: 0 0 6px 0; color: #065F46;">🎉 XỬ LÝ HOÀN TẤT ({st.session_state['total_time_str']})</h4>
         <div style="font-size: 13px; line-height: 1.5;">
             • Đã quét: <b>{st.session_state['total_files']}</b> file PDF &nbsp;|&nbsp; Tìm thấy: <b>{st.session_state['total_extracted']}</b> phiếu SM<br>
-            • 📥 <i>File Excel <b>{st.session_state['excel_name']}</b> đang được tự động tải về máy...</i>
+            • 📥 <b>File Excel <code>{out_name}</code> đang được tự động tải về máy của bạn!</b>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Nút XỬ LÝ FILE MỚI (Thay thế nút tải cũ, refresh trang về ban đầu)
+    # Nút XỬ LÝ FILE MỚI (Refresh trang về ban đầu)
     if st.button("🔄 XỬ LÝ FILE MỚI (LÀM MỚI TRANG)", type="primary", use_container_width=True):
-        for k in ['excel_data', 'excel_name', 'total_files', 'total_extracted', 'total_time_str']:
+        for k in ['excel_data', 'excel_name', 'total_files', 'total_extracted', 'total_time_str', 'completed']:
             if k in st.session_state:
                 del st.session_state[k]
         st.rerun()
 
-    # Dòng chữ tải dự phòng nhỏ bên dưới
+    # Link tải dự phòng nhỏ bên dưới phòng khi trình duyệt chặn tự động tải
     st.markdown("<div style='text-align: center; margin-top: 6px;'>", unsafe_allow_html=True)
     st.download_button(
         label="👉 Nếu trình duyệt chặn tự động tải, bấm vào đây để tải file",
-        data=st.session_state['excel_data'],
-        file_name=st.session_state['excel_name'],
+        data=excel_bytes,
+        file_name=out_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     st.markdown("</div>", unsafe_allow_html=True)
