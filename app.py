@@ -312,8 +312,7 @@ st.markdown("""
 # Header
 st.markdown("""
 <div class="pro-header">
-    <h1 class="pro-title">Trích Xuất Số SM & Ngày Phiếu Giao Hàng</h1>
-    <p class="pro-sub">Nhận diện mẫu Tiền Phong • Tự động đếm trang • Xuất file Excel đa sheet</p>
+    <h1 class="pro-title">Trích Xuất SM</h1>
 </div>
 """, unsafe_allow_html=True)
 
