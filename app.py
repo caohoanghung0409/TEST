@@ -120,13 +120,14 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
                     found_sms.append(val)
                     
         # 3. Lấy dữ liệu:
-        # - Nếu đúng mẫu NHUATIENPHONG: lấy số SM, ngày (nếu có) và số trang
-        # - Nếu ngoài NHUATIENPHONG nhưng CÓ SỐ SM: cũng lấy luôn (ngày nếu có thì lấy, không có thì để trống)
+        # - Nếu đúng mẫu NHUATIENPHONG: lấy số SM, ngày và số trang như cũ
+        # - Nếu KHÔNG PHẢI NHUATIENPHONG: lấy số SM và số trang, KHÔNG lấy ngày (để trống)
         if found_sms:
+            date_val = dt if is_tp else ""
             for sm in found_sms:
                 records.append({
                     'sm': sm,
-                    'date': dt,
+                    'date': date_val,
                     'page': page_num
                 })
                 
