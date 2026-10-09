@@ -79,7 +79,7 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
         img = bitmap.to_pil()
         w, h = img.size
         
-        # Cắt 35% đầu trang
+        # Cắt 35% đầu trang để quét đầy đủ cả phiếu Tiền Phong lẫn các đơn vị khác
         crop = img.crop((0, 0, w, int(h * 0.35)))
         try:
             text = pytesseract.image_to_string(crop, lang='eng')
@@ -89,47 +89,64 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
         text_u = text.upper()
         is_tp = ('TIEN PHONG' in text_u or 'THIEU NIEN' in text_u or 'NHUATIENPHONG' in text_u)
         
-        # 1. Tìm ngày nếu có trên trang
-        date_match = re.search(r'Ng[aàeè]y[\s;:,-]*([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text, re.IGNORECASE)
-        if not date_match:
-            date_match = re.search(r'([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text)
-            
-        dt = ""
-        if date_match:
-            d_val = int(date_match.group(1))
-            m_val = int(date_match.group(2))
-            y_val = date_match.group(3)
-            if 1 <= d_val <= 31 and 1 <= m_val <= 12 and len(y_val) == 4:
-                dt = f"{d_val:02d}/{m_val:02d}/{y_val}"
+        if is_tp:
+            # 1. TRƯỜNG HỢP ĐÚNG MẪU NHUATIENPHONG: Lấy như cũ (SM, Ngày, Số trang)
+            sm_match = re.search(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
+            if not sm_match:
+                sm_match = re.search(r'[\$S§s]M[\s\.:,]*([0-9]{4,8})', text)
+                val = sm_match.group(1) if sm_match else ""
+                sm = f"SM{val[:4]}.{val[4:]}" if len(val) == 8 else (f"SM{val}" if val else None)
+            else:
+                p1_val = sm_match.group(1)
+                p2_val = sm_match.group(2)
+                sm = f"SM{p1_val}.{p2_val}" if p2_val else f"SM{p1_val}"
                 
-        # 2. Tìm tất cả các số SM xuất hiện trên trang
-        matches = re.finditer(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
-        found_sms = []
-        for m in matches:
-            p_first = m.group(1)
-            p_second = m.group(2)
-            val = f"SM{p_first}.{p_second}" if p_second else f"SM{p_first}"
-            if val not in found_sms:
-                found_sms.append(val)
+            date_match = re.search(r'Ng[aàeè]y[\s;:,-]*([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text, re.IGNORECASE)
+            if not date_match:
+                date_match = re.search(r'([0-9]{1,2})[\/\.\-]([0-9]{1,2})[\/\.\-]([0-9]{4})', text)
                 
-        if not found_sms:
-            simple_match = re.findall(r'[\$S§s]M[\s\.:,]*([0-9]{6,8})', text)
-            for s in simple_match:
-                val = f"SM{s[:4]}.{s[4:]}"
+            if date_match:
+                d_val = int(date_match.group(1))
+                m_val = int(date_match.group(2))
+                y_val = date_match.group(3)
+                if 1 <= d_val <= 31 and 1 <= m_val <= 12 and len(y_val) == 4:
+                    dt = f"{d_val:02d}/{m_val:02d}/{y_val}"
+                else:
+                    dt = None
+            else:
+                dt = None
+                
+            if sm and dt:
+                records.append({
+                    'sm': sm,
+                    'date': dt,
+                    'page': page_num
+                })
+        else:
+            # 2. TRƯỜNG HỢP KHÔNG PHẢI NHUATIENPHONG: Cứ có số SM là lấy, KHÔNG LẤY NGÀY (để trống)
+            matches = re.finditer(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
+            found_sms = []
+            for m in matches:
+                p1_val = m.group(1)
+                p2_val = m.group(2)
+                val = f"SM{p1_val}.{p2_val}" if p2_val else f"SM{p1_val}"
                 if val not in found_sms:
                     found_sms.append(val)
                     
-        # 3. Lấy dữ liệu:
-        # - Nếu đúng mẫu NHUATIENPHONG: lấy số SM, ngày và số trang như cũ
-        # - Nếu KHÔNG PHẢI NHUATIENPHONG: lấy số SM và số trang, KHÔNG lấy ngày (để trống)
-        if found_sms:
-            date_val = dt if is_tp else ""
-            for sm in found_sms:
-                records.append({
-                    'sm': sm,
-                    'date': date_val,
-                    'page': page_num
-                })
+            if not found_sms:
+                simple_match = re.findall(r'[\$S§s]M[\s\.:,]*([0-9]{6,8})', text)
+                for s in simple_match:
+                    val = f"SM{s[:4]}.{s[4:]}"
+                    if val not in found_sms:
+                        found_sms.append(val)
+                        
+            if found_sms:
+                for sm_val in found_sms:
+                    records.append({
+                        'sm': sm_val,
+                        'date': "",  # Không phải Tiền Phong thì không lấy ngày (để trống)
+                        'page': page_num
+                    })
                 
         if page_callback:
             page_callback(page_num, total_pages)
@@ -326,14 +343,13 @@ st.markdown("""
 # Header
 st.markdown("""
 <div class="pro-header">
-    <h1 class="pro-title">Trích Xuất Số SM & Ngày Phiếu Giao Hàng</h1>
-    <p class="pro-sub">Nhận diện mẫu Tiền Phong • Tự động đếm trang • Xuất file Excel đa sheet</p>
+    <h1 class="pro-title">XỬ LÝ SM PDF TO EXCEL</h1>
 </div>
 """, unsafe_allow_html=True)
 
 # Khung Upload
 uploaded_files = st.file_uploader(
-    "Chọn hoặc kéo thả các file PDF scan vào đây:", 
+    "Thêm file PDF vào đây:", 
     type=["pdf"], 
     accept_multiple_files=True,
     help="Có thể chọn nhiều file. Bấm dấu ✖ bên cạnh file để xóa nếu chọn nhầm."
@@ -356,9 +372,12 @@ if uploaded_files:
     total_files = len(uploaded_files)
     st.caption(f"📁 Đang chọn **{total_files}** file PDF.")
     
-    # 1. NÚT "BẮT ĐẦU TRÍCH XUẤT" (Chỉ hiện khi CHƯA xử lý xong)
+    # 1. NÚT "BẮT ĐẦU XỬ LÝ" (Chỉ hiện khi CHƯA xử lý xong)
     if 'completed' not in st.session_state:
-        if st.button("⚡ BẮT ĐẦU TRÍCH XUẤT", type="primary", use_container_width=True):
+        btn_placeholder = st.empty()
+        if btn_placeholder.button("⚡ BẮT ĐẦU XỬ LÝ", type="primary", use_container_width=True, key="btn_start"):
+            # Làm mờ nút ngay lập tức và vô hiệu hóa (disabled=True) trong lúc thanh trạng thái đang chạy
+            btn_placeholder.button("⏳ ĐANG XỬ LÝ DỮ LIỆU...", type="primary", use_container_width=True, disabled=True, key="btn_disabled")
             
             with st.spinner("Đang chuẩn bị quét dữ liệu..."):
                 pages_per_file = []
@@ -484,7 +503,6 @@ if st.session_state.get('completed', False):
     # Dòng trợ giúp nhỏ
     st.markdown("""
     <div style='text-align: center; margin-top: 10px; font-size: 12px; color: #64748B;'>
-        💡 <b>Mẹo tự động mở file trên trình duyệt:</b> Nhấp chuột phải vào file <code>PDF-TO-EXCEL.xlsx</code> vừa tải ở góc trình duyệt ➔ Chọn <i>"Luôn mở các tệp loại này"</i> để máy tự bật Excel mỗi khi tải xong!
     </div>
     """, unsafe_allow_html=True)
     
