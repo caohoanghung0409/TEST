@@ -77,8 +77,32 @@ def clean_compound_sm(raw_match):
     s = re.sub(r'SM([0-9]{4}),([0-9]{4})', r'SM\1.\2', s)
     return s
 
+def enhance_faint_crop(pil_crop):
+    """Tự động nâng độ tương phản và làm rõ nét các chữ in kim / scan mờ"""
+    try:
+        import cv2
+        import numpy as np
+        gray = cv2.cvtColor(np.array(pil_crop), cv2.COLOR_RGB2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
+        gaussian = cv2.GaussianBlur(enhanced, (0, 0), 2.0)
+        sharpened = cv2.addWeighted(enhanced, 1.5, gaussian, -0.5, 0)
+        return Image.fromarray(sharpened)
+    except Exception:
+        from PIL import ImageEnhance
+        gray = pil_crop.convert('L')
+        con = ImageEnhance.Contrast(gray).enhance(2.2)
+        return ImageEnhance.Sharpness(con).enhance(2.0)
+
+def normalize_dot_matrix_artifacts(text):
+    """Sửa các lỗi đọc lệch phổ biến của font in kim bị đứt nét mực"""
+    # 1. Khôi phục chữ SM khi nét xiên của M bị đứt (ví dụ: S\I, S/I, S|I, SNI, SMP -> SM)
+    text = re.sub(r'S[\/\|\(\)\[\]NI\s]{1,3}(?=[0-9])', 'SM', text)
+    text = text.replace('SMP', 'SM').replace('SVI', 'SM').replace('$M', 'SM').replace('§M', 'SM')
+    return text
+
 def extract_from_single_pdf(file_bytes, page_callback=None):
-    """Trích xuất SM và Ngày từ 1 file PDF"""
+    """Trích xuất SM và Ngày từ 1 file PDF (Có thuật toán tự động phục hồi ảnh mờ)"""
     pdf = pdfium.PdfDocument(file_bytes)
     total_pages = len(pdf)
     records = []
@@ -86,22 +110,45 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
     for page_idx in range(total_pages):
         page_num = page_idx + 1
         page = pdf[page_idx]
-        bitmap = page.render(scale=2.0)
+        # Nâng độ phân giải render lên 2.5 (~200 DPI) để chi tiết nét chữ rõ ràng hơn
+        bitmap = page.render(scale=2.5)
         img = bitmap.to_pil()
         w, h = img.size
         
         # Cắt 35% đầu trang
         crop = img.crop((0, 0, w, int(h * 0.35)))
+        
+        # --- PASS 1: Quét tiêu chuẩn ---
         try:
             text = pytesseract.image_to_string(crop, lang='eng')
         except Exception:
             text = ""
             
+        text = normalize_dot_matrix_artifacts(text)
         text_u = text.upper()
         is_tp = ('TIEN PHONG' in text_u or 'THIEU NIEN' in text_u or 'NHUATIENPHONG' in text_u)
         
+        # Kiểm tra xem có SM hay chưa
+        compound_pattern = r'[\$S§s]M[\s\.:,]*[0-9]+(?:[\s]*[\+\-\/\.,_&][\s]*(?:[\$S§s]M[\s\.:,]*)?[0-9]+)*'
+        test_sms = re.findall(compound_pattern, text)
+        
+        # --- PASS 2: Nếu chưa tìm thấy SM (do scan mờ / in kim), tự động kích hoạt bộ phục hồi nét ảnh ---
+        if not test_sms:
+            enhanced_crop = enhance_faint_crop(crop)
+            try:
+                text_enh = pytesseract.image_to_string(enhanced_crop, lang='eng')
+                text_enh = normalize_dot_matrix_artifacts(text_enh)
+                test_sms_enh = re.findall(compound_pattern, text_enh)
+                if test_sms_enh:
+                    text = text_enh
+                    text_u = text.upper()
+                    if not is_tp:
+                        is_tp = ('TIEN PHONG' in text_u or 'THIEU NIEN' in text_u or 'NHUATIENPHONG' in text_u)
+            except Exception:
+                pass
+                
         if is_tp:
-            # 1. TRƯỜNG HỢP ĐÚNG MẪU NHUATIENPHONG: Lấy như cũ (SM, Ngày, Số trang)
+            # 1. TRƯỜNG HỢP ĐÚNG MẪU NHUATIENPHONG: Lấy SM, Ngày, Số trang
             sm_match = re.search(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
             if not sm_match:
                 sm_match = re.search(r'[\$S§s]M[\s\.:,]*([0-9]{4,8})', text)
@@ -137,7 +184,6 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
             # 2. TRƯỜNG HỢP KHÔNG PHẢI NHUATIENPHONG:
             # Lấy NGUYÊN DÃY SỐ sau SM (ví dụ: SM2609.4531+4532, SM2609.3768+3769...)
             # và SỐ TRANG, KHÔNG LẤY NGÀY (để trống "")
-            compound_pattern = r'[\$S§s]M[\s\.:,]*[0-9]+(?:[\s]*[\+\-\/\.,_&][\s]*(?:[\$S§s]M[\s\.:,]*)?[0-9]+)*'
             matches = re.findall(compound_pattern, text)
             found_sms = []
             for m in matches:
