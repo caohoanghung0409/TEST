@@ -66,39 +66,103 @@ def sanitize_sheet_name(name, existing_names):
     existing_names.add(final_name.lower())
     return final_name
 
+def enhance_faint_crop(pil_crop):
+    """Tự động nâng độ tương phản và làm rõ nét các chữ in kim / scan mờ"""
+    try:
+        import cv2
+        import numpy as np
+        gray = cv2.cvtColor(np.array(pil_crop), cv2.COLOR_RGB2GRAY)
+        # CLAHE tăng tương phản cục bộ mạnh mẽ cho các nét mực mờ
+        clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
+        # Làm sắc nét viền hạt mực
+        gaussian = cv2.GaussianBlur(enhanced, (0, 0), 2.0)
+        sharpened = cv2.addWeighted(enhanced, 1.5, gaussian, -0.5, 0)
+        return Image.fromarray(sharpened)
+    except Exception:
+        from PIL import ImageEnhance
+        gray = pil_crop.convert('L')
+        con = ImageEnhance.Contrast(gray).enhance(2.2)
+        return ImageEnhance.Sharpness(con).enhance(2.0)
+
+def normalize_dot_matrix_artifacts(text):
+    """Sửa các lỗi đọc lệch phổ biến của font in kim bị đứt nét mực"""
+    # 1. Khôi phục chữ SM khi nét xiên của M bị đứt (ví dụ: S\I, S/I, S|I, SNI, SMP -> SM)
+    text = re.sub(r'S[\/\|\(\)\[\]NI\s]{1,3}(?=[0-9])', 'SM', text)
+    text = text.replace('SMP', 'SM').replace('SVI', 'SM').replace('$M', 'SM').replace('§M', 'SM')
+    return text
+
 def clean_compound_sm(raw_match):
     """Làm sạch và chuẩn hóa toàn bộ chuỗi số sau SM (ví dụ: SM2609.4531+4532)"""
     s = raw_match.strip()
     s = re.sub(r'^[\$S§s]M[\s\.:,]*', 'SM', s, flags=re.IGNORECASE)
     s = re.sub(r'[\s\.,\+\-\/_&]+$', '', s)
     s = re.sub(r'SM([0-9]{4}),([0-9]{4})', r'SM\1.\2', s)
+    # Nếu giữa 2 cụm 4 số là khoảng trắng thì chuẩn hóa thành dấu chấm (SM2609 6171 -> SM2609.6171)
+    s = re.sub(r'SM([0-9]{4})\s+([0-9]{4})', r'SM\1.\2', s)
     return s
 
 def extract_from_single_pdf(file_bytes, page_callback=None):
-    """Trích xuất SM và Ngày từ 1 file PDF"""
+    """Trích xuất SM và Ngày từ 1 file PDF (Có thuật toán tự động phục hồi trang scan mờ)"""
     pdf = pdfium.PdfDocument(file_bytes)
     total_pages = len(pdf)
     records = []
     
+    compound_pattern = r'[\$S§s]M[\s\.:,]*[0-9]+(?:[\s]*[\+\-\/\.,_&][\s]*(?:[\$S§s]M[\s\.:,]*)?[0-9]+)*'
+    
     for page_idx in range(total_pages):
         page_num = page_idx + 1
         page = pdf[page_idx]
-        bitmap = page.render(scale=2.0)
+        # Render độ phân giải cao 2.5 (~200 DPI) để chi tiết nét chữ rõ ràng hơn
+        bitmap = page.render(scale=2.5)
         img = bitmap.to_pil()
         w, h = img.size
         
-        # Cắt 35% đầu trang để quét đầy đủ cả phiếu Tiền Phong lẫn các đơn vị khác
+        # Cắt 35% đầu trang
         crop = img.crop((0, 0, w, int(h * 0.35)))
+        
+        # ==================== PASS 1: QUÉT TIÊU CHUẨN ====================
         try:
             text = pytesseract.image_to_string(crop, lang='eng')
         except Exception:
             text = ""
             
+        text = normalize_dot_matrix_artifacts(text)
         text_u = text.upper()
         is_tp = ('TIEN PHONG' in text_u or 'THIEU NIEN' in text_u or 'NHUATIENPHONG' in text_u)
         
+        # Thử tìm SM trong Pass 1
+        found_sms = []
         if is_tp:
-            # 1. TRƯỜNG HỢP ĐÚNG MẪU NHUATIENPHONG: Lấy như cũ (SM, Ngày, Số trang)
+            sm_match = re.search(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
+            if sm_match:
+                p1_val = sm_match.group(1)
+                p2_val = sm_match.group(2)
+                found_sms.append(f"SM{p1_val}.{p2_val}" if p2_val else f"SM{p1_val}")
+        else:
+            matches = re.findall(compound_pattern, text)
+            for m in matches:
+                c_sm = clean_compound_sm(m)
+                if c_sm and c_sm not in found_sms:
+                    found_sms.append(c_sm)
+
+        # ==================== PASS 2: PHỤC HỒI TỰ ĐỘNG NẾU TRANG MỜ ====================
+        # Nếu Pass 1 không tìm thấy SM nào (trang bị mờ / mực nhạt), tự động kích hoạt bộ lọc phục hồi nét ảnh
+        if not found_sms:
+            enhanced_crop = enhance_faint_crop(crop)
+            try:
+                text_enh = pytesseract.image_to_string(enhanced_crop, lang='eng')
+                text_enh = normalize_dot_matrix_artifacts(text_enh)
+                text_enh_u = text_enh.upper()
+                if not is_tp:
+                    is_tp = ('TIEN PHONG' in text_enh_u or 'THIEU NIEN' in text_enh_u or 'NHUATIENPHONG' in text_enh_u)
+                text = text_enh
+            except Exception:
+                pass
+                
+        # ==================== TRÍCH XUẤT KẾT QUẢ ====================
+        if is_tp:
+            # 1. TRƯỜNG HỢP TIỀN PHONG: Lấy SM, Ngày, Số trang
             sm_match = re.search(r'[\$S§s]M[^\d\n]*([0-9]{4})(?:[^\d\n]+([0-9]{2,4}))?', text)
             if not sm_match:
                 sm_match = re.search(r'[\$S§s]M[\s\.:,]*([0-9]{4,8})', text)
@@ -131,31 +195,29 @@ def extract_from_single_pdf(file_bytes, page_callback=None):
                     'page': page_num
                 })
         else:
-            # 2. TRƯỜNG HỢP KHÔNG PHẢI NHUATIENPHONG:
-            # Lấy NGUYÊN VẸN TOÀN BỘ DÃY SỐ sau SM (ví dụ: SM2609.4531+4532, SM2609.3268+3269+3446, SM2609.6171-6173...)
-            # và SỐ TRANG, KHÔNG LẤY NGÀY (để trống "")
-            compound_pattern = r'[\$S§s]M[\s\.:,]*[0-9]+(?:[\s]*[\+\-\/\.,_&][\s]*(?:[\$S§s]M[\s\.:,]*)?[0-9]+)*'
+            # 2. TRƯỜNG HỢP NGOÀI TIỀN PHONG: Lấy nguyên dãy số sau SM, không lấy ngày
             matches = re.findall(compound_pattern, text)
-            found_sms = []
+            found_non_tp = []
             for m in matches:
                 cleaned_sm = clean_compound_sm(m)
-                if cleaned_sm and cleaned_sm not in found_sms:
-                    found_sms.append(cleaned_sm)
+                if cleaned_sm and cleaned_sm not in found_non_tp:
+                    found_non_tp.append(cleaned_sm)
                     
-            if not found_sms:
+            if not found_non_tp:
                 simple_match = re.findall(r'[\$S§s]M[\s\.:,]*([0-9]{4,8})', text)
                 for s in simple_match:
                     val = f"SM{s[:4]}.{s[4:]}" if len(s) == 8 else f"SM{s}"
-                    if val not in found_sms:
-                        found_sms.append(val)
+                    if val not in found_non_tp:
+                        found_non_tp.append(val)
                         
-            if found_sms:
-                for sm_val in found_sms:
+            if found_non_tp:
+                for sm_val in found_non_tp:
                     records.append({
                         'sm': sm_val,
                         'date': "",  # Không phải Tiền Phong thì không lấy ngày (để trống)
                         'page': page_num
                     })
+                
         if page_callback:
             page_callback(page_num, total_pages)
             
