@@ -427,12 +427,16 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Khung Upload
+# Khung Upload (Sử dụng key động để reset sạch sẽ không cần F5 trình duyệt)
+if 'uploader_key' not in st.session_state:
+    st.session_state['uploader_key'] = 0
+
 uploaded_files = st.file_uploader(
     "Thêm file PDF vào đây:", 
     type=["pdf"], 
     accept_multiple_files=True,
-    help="Có thể chọn nhiều file. Bấm dấu ✖ bên cạnh file để xóa nếu chọn nhầm."
+    help="Có thể chọn nhiều file. Bấm dấu ✖ bên cạnh file để xóa nếu chọn nhầm.",
+    key=f"uploader_{st.session_state['uploader_key']}"
 )
 
 # ==================== TỰ ĐỘNG RESET NẾU THAY ĐỔI FILE ====================
@@ -573,21 +577,12 @@ if st.session_state.get('completed', False):
     </div>
     """, unsafe_allow_html=True)
     
-    # Nút XỬ LÝ FILE MỚI (Tự động F5 tải lại trang web như mới)
-    if st.button("🔄 XỬ LÝ FILE MỚI (F5 TRANG WEB)", type="primary", use_container_width=True):
-        st.session_state.clear()
-        # Kích hoạt lệnh F5 toàn bộ trang web trên trình duyệt
-        js_f5 = """
-        <script>
-            try {
-                (window.parent || window).location.reload();
-            } catch(e) {
-                window.location.reload();
-            }
-        </script>
-        """
-        components.html(js_f5, height=0, width=0)
-        time.sleep(0.5)
+    # Nút XỬ LÝ FILE MỚI: Reset sạch sẽ giao diện về như lúc ban đầu mà không cần F5
+    if st.button("🔄 XỬ LÝ FILE MỚI", type="primary", use_container_width=True):
+        st.session_state['uploader_key'] += 1
+        for k in ['excel_data', 'excel_name', 'total_files', 'total_extracted', 'total_time_str', 'completed', 'opened_path', 'last_uploaded_files']:
+            if k in st.session_state:
+                del st.session_state[k]
         st.rerun()
 
     # Dòng trợ giúp nhỏ
