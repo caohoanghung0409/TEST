@@ -86,10 +86,20 @@ def enhance_faint_crop(pil_crop):
         return ImageEnhance.Sharpness(con).enhance(2.0)
 
 def normalize_dot_matrix_artifacts(text):
-    """Sửa các lỗi đọc lệch phổ biến của font in kim bị đứt nét mực"""
-    # 1. Khôi phục chữ SM khi nét xiên của M bị đứt (ví dụ: S\I, S/I, S|I, SNI, SMP -> SM)
+    """Sửa các lỗi đọc lệch phổ biến của font in kim bị đứt nét mực, mờ"""
+    # 1. Khôi phục chữ SM khi nét xiên của M bị đứt
+    for wrong in ['S\\I', 'S\\P', 'S\\N', 'S\\B', 'S/I', 'S|I', 'SMP', 'SVI', '$M', '§M']:
+        text = text.replace(wrong, 'SM')
     text = re.sub(r'S[\/\|\(\)\[\]NI\s]{1,3}(?=[0-9])', 'SM', text)
-    text = text.replace('SMP', 'SM').replace('SVI', 'SM').replace('$M', 'SM').replace('§M', 'SM')
+    
+    # 2. Sửa lỗi đọc nhầm năm tháng SM2009 -> SM2609
+    text = re.sub(r'SM2[0-9]09', 'SM2609', text)
+    
+    # 3. Sửa lỗi đọc nhầm chữ cái G thành 6 trong chuỗi số SM
+    text = re.sub(r'(?<=SM2609[\s\.:])G([0-9]{3})', r'6\1', text)
+    
+    # 4. Chuẩn hóa khoảng trắng thành dấu chấm giữa các cụm số SM
+    text = re.sub(r'(SM2609)\s+([0-9]{4})', r'\1.\2', text)
     return text
 
 def clean_compound_sm(raw_match):
