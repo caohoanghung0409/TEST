@@ -573,11 +573,21 @@ if st.session_state.get('completed', False):
     </div>
     """, unsafe_allow_html=True)
     
-    # Nút XỬ LÝ FILE MỚI (Refresh trang về ban đầu)
-    if st.button("🔄 XỬ LÝ FILE MỚI (LÀM MỚI TRANG)", type="primary", use_container_width=True):
-        for k in ['excel_data', 'excel_name', 'total_files', 'total_extracted', 'total_time_str', 'completed', 'opened_path']:
-            if k in st.session_state:
-                del st.session_state[k]
+    # Nút XỬ LÝ FILE MỚI (Tự động F5 tải lại trang web như mới)
+    if st.button("🔄 XỬ LÝ FILE MỚI (F5 TRANG WEB)", type="primary", use_container_width=True):
+        st.session_state.clear()
+        # Kích hoạt lệnh F5 toàn bộ trang web trên trình duyệt
+        js_f5 = """
+        <script>
+            try {
+                (window.parent || window).location.reload();
+            } catch(e) {
+                window.location.reload();
+            }
+        </script>
+        """
+        components.html(js_f5, height=0, width=0)
+        time.sleep(0.5)
         st.rerun()
 
     # Dòng trợ giúp nhỏ
